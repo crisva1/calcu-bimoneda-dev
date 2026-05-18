@@ -1,0 +1,1087 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Bimoneda">
+<meta name="theme-color" content="#E84E0F">
+<title>Calcu Bimoneda</title>
+<link rel="apple-touch-icon" href="./icon-192.png">
+<link rel="icon" type="image/png" href="./icon-192.png">
+<link rel="manifest" href="./manifest.json">
+
+<!--
+  ╔══════════════════════════════════════════════════════╗
+  ║  BLOQUEO CRÍTICO: este script corre ANTES del DOM   ║
+  ║  Si la licencia está activa, oculta el muro         ║
+  ║  inmediatamente para evitar el "flash" de contenido ║
+  ╚══════════════════════════════════════════════════════╝
+  Nota: NO uses defer ni async en este bloque. Debe ser
+  sincrónico para que corra antes del primer render.
+-->
+<script>
+  // Inyectamos un <style> de emergencia ANTES de que el
+  // navegador pinte cualquier pixel. Así el muro siempre
+  // es visible por defecto y la app siempre está oculta.
+  (function() {
+    var style = document.createElement('style');
+    style.id = 'bloqueo-inicial';
+    style.textContent =
+      '#muro-bloqueo { display:flex !important; }' +
+      '#app-content   { display:none !important; }';
+    document.head.appendChild(style);
+  })();
+</script>
+
+<style>
+/* ── RESET ─────────────────────────────────────────── */
+* { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
+body { background: #0c0f16; font-family: 'Segoe UI', system-ui, sans-serif; color: #f0f0f0; min-height: 100vh; padding-bottom: 40px; }
+
+/* ── CALCULADORA ────────────────────────────────────── */
+.header { background: #E84E0F; text-align: center; padding: 18px 16px; font-size: 16px; font-weight: 700; letter-spacing: 3px; color: white; position: sticky; top: 0; z-index: 10; display: flex; align-items: center; justify-content: center; gap: 10px; }
+.saved-badge { font-size: 10px; letter-spacing: 1px; background: rgba(255,255,255,0.25); border-radius: 20px; padding: 3px 9px; color: white; display: none; }
+.body { max-width: 420px; margin: 0 auto; padding: 14px; display: flex; flex-direction: column; gap: 12px; }
+.sec-label { font-size: 10px; letter-spacing: 1.5px; color: #666; text-transform: uppercase; margin-bottom: 10px; }
+.card { background: #1c2030; border-radius: 14px; padding: 16px; border: 0.5px solid #2a2e3e; }
+.row2 { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.field-wrap { display: flex; flex-direction: column; gap: 6px; }
+.field-label { font-size: 11px; color: #888; }
+.field-input { background: #111318; border: 0.5px solid #3a3e50; border-radius: 10px; color: #f0f0f0; font-size: 16px; padding: 11px 13px; width: 100%; outline: none; transition: border-color 0.2s; }
+.field-input:focus { border-color: #E84E0F; }
+.field-input.big { font-size: 26px; padding: 14px 16px; font-weight: 500; color: #fff; }
+.factor-row { display: flex; justify-content: space-between; align-items: center; margin-top: 12px; padding-top: 12px; border-top: 0.5px solid #2a2e3e; }
+.factor-label { font-size: 11px; color: #666; }
+.factor-val { font-size: 14px; color: #f0c040; font-weight: 600; }
+.precio-sistema { background: #1a1800; border-radius: 10px; padding: 10px 13px; display: flex; justify-content: space-between; align-items: center; margin-top: 12px; border: 0.5px solid #3a3520; }
+.ps-label { font-size: 11px; color: #888; }
+.ps-val { font-size: 15px; color: #f0c040; font-weight: 600; }
+.precio-card { background: #071e0e; border-radius: 14px; padding: 20px 16px; text-align: center; border: 0.5px solid #1a5c28; }
+.precio-tag { font-size: 10px; letter-spacing: 2px; color: #4eff7a; text-transform: uppercase; margin-bottom: 8px; }
+.precio-monto { font-size: 42px; font-weight: 700; color: #4eff7a; line-height: 1; }
+.precio-sub { font-size: 12px; color: #3a7a4a; margin-top: 8px; }
+.resultados { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.resultado-card { background: #1c2030; border-radius: 14px; padding: 16px 14px; text-align: center; border: 0.5px solid #2a2e3e; }
+.res-label { font-size: 11px; color: #666; margin-bottom: 8px; }
+.res-val { font-size: 22px; font-weight: 600; }
+.res-val.bs  { color: #60aaff; }
+.res-val.usd { color: #4eff7a; }
+.btn-nueva { width: 100%; background: #E84E0F; border: none; border-radius: 12px; color: white; font-size: 15px; font-weight: 700; padding: 15px; cursor: pointer; letter-spacing: 1px; }
+.footer { text-align: center; font-size: 11px; color: #333; margin-top: 4px; }
+
+/* ── NAVEGACIÓN DE PESTAÑAS ─────────────────────────── */
+.tab-bar { display: flex; background: #111318; border-bottom: 1px solid #2a2e3e; position: sticky; top: 56px; z-index: 9; }
+.tab-btn { flex: 1; padding: 12px 6px; font-size: 12px; font-weight: 700; letter-spacing: 1px; color: #555; background: none; border: none; cursor: pointer; border-bottom: 3px solid transparent; transition: all 0.2s; }
+.tab-btn.activa { color: #E84E0F; border-bottom-color: #E84E0F; }
+
+/* ── VISTAS ──────────────────────────────────────────── */
+.vista { display: none; }
+.vista.activa { display: block; }
+
+/* ── CATÁLOGO ────────────────────────────────────────── */
+.buscador-wrap { padding: 12px 14px 0; max-width: 420px; margin: 0 auto; }
+.buscador { background: #1c2030; border: 0.5px solid #3a3e50; border-radius: 10px; color: #f0f0f0; font-size: 15px; padding: 11px 14px; width: 100%; outline: none; }
+.buscador:focus { border-color: #E84E0F; }
+.grid-cat { max-width: 420px; margin: 0 auto; padding: 12px 14px; display: flex; flex-direction: column; gap: 10px; }
+.prod-card { background: #1c2030; border-radius: 12px; border: 0.5px solid #2a2e3e; padding: 14px; display: flex; justify-content: space-between; align-items: center; gap: 10px; }
+.prod-info { flex: 1; min-width: 0; }
+.prod-nombre { font-size: 14px; font-weight: 700; color: #f0f0f0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.prod-variante { font-size: 11px; color: #888; margin-top: 2px; }
+.prod-precios { display: flex; flex-direction: column; align-items: flex-end; gap: 3px; }
+.prod-usd { font-size: 16px; font-weight: 700; color: #4eff7a; }
+.prod-bs { font-size: 12px; color: #60aaff; }
+.btn-agregar-carrito { background: #E84E0F; border: none; border-radius: 8px; color: white; font-size: 20px; width: 36px; height: 36px; cursor: pointer; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
+.sin-productos { text-align: center; color: #444; font-size: 14px; padding: 40px 20px; }
+
+/* ── FAB ─────────────────────────────────────────────── */
+.fab { position: fixed; bottom: 24px; right: 20px; background: #E84E0F; color: white; border: none; border-radius: 50px; padding: 14px 20px; font-size: 14px; font-weight: 700; cursor: pointer; box-shadow: 0 4px 20px rgba(232,78,15,0.4); z-index: 100; display: none; }
+.fab.visible { display: flex; align-items: center; gap: 8px; }
+
+/* ── MODAL PRODUCTO ──────────────────────────────────── */
+.modal-fondo { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.85); z-index: 10000; align-items: flex-end; justify-content: center; }
+.modal-fondo.activo { display: flex; }
+.modal-card { background: #1c2030; border-radius: 20px 20px 0 0; border: 1px solid #2a2e3e; padding: 24px 20px 36px; width: 100%; max-width: 480px; display: flex; flex-direction: column; gap: 12px; max-height: 90vh; overflow-y: auto; }
+.modal-titulo { font-size: 16px; font-weight: 700; color: #f0f0f0; margin-bottom: 4px; }
+.modal-label { font-size: 11px; color: #888; margin-bottom: 4px; display: block; }
+.modal-row { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.btn-modal-ok { background: #E84E0F; color: white; border: none; border-radius: 10px; padding: 14px; font-size: 15px; font-weight: 700; cursor: pointer; margin-top: 4px; }
+.btn-modal-cancel { background: #2a2e3e; color: #aaa; border: none; border-radius: 10px; padding: 12px; font-size: 14px; cursor: pointer; }
+.btn-eliminar-prod { background: none; border: 1px solid #ff5555; color: #ff5555; border-radius: 10px; padding: 12px; font-size: 13px; cursor: pointer; }
+
+/* ── CARRITO ─────────────────────────────────────────── */
+.carrito-wrap { max-width: 420px; margin: 0 auto; padding: 12px 14px; display: flex; flex-direction: column; gap: 10px; }
+.carrito-vacio { text-align: center; color: #444; font-size: 14px; padding: 40px 20px; }
+.item-carrito { background: #1c2030; border-radius: 12px; border: 0.5px solid #2a2e3e; padding: 12px 14px; }
+.item-car-top { display: flex; justify-content: space-between; align-items: flex-start; gap: 8px; }
+.item-car-nombre { font-size: 13px; font-weight: 700; color: #f0f0f0; flex: 1; }
+.item-car-subtotal { font-size: 14px; font-weight: 700; color: #4eff7a; white-space: nowrap; }
+.item-car-controles { display: flex; align-items: center; gap: 10px; margin-top: 10px; }
+.btn-cant { background: #2a2e3e; border: none; color: #f0f0f0; font-size: 18px; width: 32px; height: 32px; border-radius: 8px; cursor: pointer; display: flex; align-items: center; justify-content: center; }
+.cant-num { font-size: 16px; font-weight: 700; min-width: 24px; text-align: center; }
+.item-car-bs { font-size: 11px; color: #60aaff; margin-left: auto; }
+.btn-eliminar-item { background: none; border: none; color: #ff5555; font-size: 18px; cursor: pointer; padding: 0 4px; }
+.resumen-carrito { background: #071e0e; border-radius: 14px; border: 0.5px solid #1a5c28; padding: 16px; display: flex; flex-direction: column; gap: 8px; }
+.resumen-fila { display: flex; justify-content: space-between; align-items: center; }
+.resumen-label { font-size: 12px; color: #888; }
+.resumen-val-usd { font-size: 26px; font-weight: 700; color: #4eff7a; }
+.resumen-val-bs { font-size: 15px; color: #60aaff; font-weight: 600; }
+.btn-cobrar { width: 100%; background: #E84E0F; border: none; border-radius: 12px; color: white; font-size: 15px; font-weight: 700; padding: 15px; cursor: pointer; letter-spacing: 1px; margin-top: 4px; }
+.btn-limpiar-carrito { width: 100%; background: #1c2030; border: 0.5px solid #3a3e50; border-radius: 12px; color: #888; font-size: 13px; padding: 12px; cursor: pointer; }
+.badge-carrito { background: #4eff7a; color: #0c0f16; border-radius: 50%; font-size: 10px; font-weight: 900; min-width: 16px; height: 16px; display: inline-flex; align-items: center; justify-content: center; margin-left: 4px; }
+
+/* ── MURO DE SEGURIDAD ──────────────────────────────── */
+#muro-bloqueo {
+  position: fixed;
+  top: 0; left: 0;
+  width: 100%; height: 100%;
+  background: #0c0f16;
+  /* z-index máximo posible para ganarle a cualquier elemento */
+  z-index: 2147483647;
+  display: flex;           /* visible por defecto */
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+  text-align: center;
+  /* Evita scroll detrás del muro en iOS */
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+}
+.card-seg {
+  background: #1c2030;
+  padding: 28px 22px;
+  border-radius: 16px;
+  border: 1px solid #2a2e3e;
+  width: 100%;
+  max-width: 380px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.seg-title { color: #E84E0F; font-size: 20px; font-weight: 700; letter-spacing: 2px; }
+.seg-sub { font-size: 13px; color: #666; }
+.id-box {
+  background: #111318;
+  padding: 12px;
+  border-radius: 8px;
+  border: 1px dashed #E84E0F;
+  color: #E84E0F;
+  font-weight: bold;
+  font-size: 15px;
+  letter-spacing: 1px;
+  word-break: break-all;
+}
+.id-label { font-size: 10px; color: #555; letter-spacing: 1.5px; text-transform: uppercase; margin-bottom: 4px; }
+.btn-ws {
+  background: #25D366;
+  color: white;
+  border: none;
+  padding: 14px;
+  border-radius: 10px;
+  font-weight: 700;
+  font-size: 14px;
+  width: 100%;
+  cursor: pointer;
+  letter-spacing: 0.5px;
+}
+.btn-act {
+  background: #E84E0F;
+  color: white;
+  border: none;
+  padding: 14px;
+  border-radius: 10px;
+  font-weight: 700;
+  font-size: 14px;
+  width: 100%;
+  cursor: pointer;
+  letter-spacing: 0.5px;
+}
+.divider { height: 1px; background: #2a2e3e; }
+.msg-error { color: #ff5555; font-size: 13px; min-height: 18px; }
+
+/* ── APP (oculta hasta que se active) ───────────────── */
+#app-content { display: none; }
+
+/* ── BOTÓN DE INSTALACIÓN ───────────────────────────── */
+#btn-instalar {
+  background: #1a2a1a;
+  border: 1.5px solid #4eff7a;
+  color: #4eff7a;
+  border-radius: 10px;
+  padding: 13px;
+  font-size: 14px;
+  font-weight: 700;
+  width: 100%;
+  cursor: pointer;
+  letter-spacing: 0.5px;
+  display: none; /* se muestra solo si aplica */
+}
+#btn-instalar:active { opacity: 0.8; }
+
+/* ── MODAL INSTRUCCIONES iOS ────────────────────────── */
+#modal-ios {
+  display: none;
+  position: fixed;
+  top: 0; left: 0;
+  width: 100%; height: 100%;
+  background: rgba(0,0,0,0.85);
+  z-index: 9999999999;
+  align-items: flex-end;
+  justify-content: center;
+  padding: 0;
+}
+#modal-ios.activo { display: flex; }
+.modal-ios-card {
+  background: #1c2030;
+  border-radius: 20px 20px 0 0;
+  border: 1px solid #2a2e3e;
+  padding: 28px 24px 36px;
+  width: 100%;
+  max-width: 480px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+.modal-ios-titulo {
+  font-size: 17px;
+  font-weight: 700;
+  color: #f0f0f0;
+  text-align: center;
+}
+.paso-ios {
+  display: flex;
+  align-items: flex-start;
+  gap: 14px;
+  background: #111318;
+  border-radius: 10px;
+  padding: 12px 14px;
+}
+.paso-num {
+  background: #E84E0F;
+  color: white;
+  font-weight: 700;
+  font-size: 13px;
+  border-radius: 50%;
+  min-width: 26px;
+  height: 26px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.paso-txt { font-size: 13px; color: #ccc; line-height: 1.5; }
+.paso-txt strong { color: #fff; }
+.btn-cerrar-modal {
+  background: #2a2e3e;
+  color: #aaa;
+  border: none;
+  border-radius: 10px;
+  padding: 13px;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  width: 100%;
+}
+.flecha-abajo {
+  text-align: center;
+  font-size: 28px;
+  margin-top: -8px;
+}
+</style>
+</head>
+<body>
+
+<!-- ════════════════════════════════════════════════════
+     MURO DE BLOQUEO
+     Siempre está en el DOM y en display:flex por defecto.
+     Solo se oculta si la licencia existe en localStorage.
+     ════════════════════════════════════════════════════ -->
+<div id="muro-bloqueo">
+  <div class="card-seg">
+    <div>
+      <p class="seg-title">PROYECTO CRISTAL</p>
+      <p class="seg-sub">Activación de Licencia</p>
+    </div>
+
+    <!-- BOTÓN DE INSTALACIÓN (Android: instala directo / iOS: muestra pasos) -->
+    <button id="btn-instalar" onclick="accionInstalar()">📲 Instalar App en mi celular</button>
+
+    <input class="field-input" type="text" id="reg-nom" placeholder="Nombre y Apellido" autocomplete="off">
+    <input class="field-input" type="text" id="reg-ci"  placeholder="Cédula" autocomplete="off" inputmode="numeric">
+
+    <div>
+      <p class="id-label">ID de dispositivo</p>
+      <div class="id-box" id="mi-id-display">Calculando…</div>
+    </div>
+
+    <button class="btn-ws" onclick="pedirAcceso()">📲 Solicitar Activación por WhatsApp</button>
+
+    <div class="divider"></div>
+
+    <input class="field-input" type="text" id="clave-in" placeholder="Pega tu clave aquí" autocomplete="off" autocorrect="off" autocapitalize="characters" spellcheck="false">
+    <button class="btn-act" onclick="activar()">🔓 Activar Licencia</button>
+
+    <p class="msg-error" id="msg-error"></p>
+  </div>
+</div>
+
+<!-- MODAL INSTRUCCIONES iOS (aparece al tocar el botón en iPhone) -->
+<div id="modal-ios">
+  <div class="modal-ios-card">
+    <p class="modal-ios-titulo">📱 Cómo instalar en iPhone</p>
+
+    <div class="paso-ios">
+      <div class="paso-num">1</div>
+      <div class="paso-txt">Asegúrate de estar abriendo este link en <strong>Safari</strong> (no Chrome ni otro navegador)</div>
+    </div>
+    <div class="paso-ios">
+      <div class="paso-num">2</div>
+      <div class="paso-txt">Toca el botón de <strong>compartir</strong> — es el cuadrado con una flecha hacia arriba que está en la barra de abajo</div>
+    </div>
+    <div class="paso-ios">
+      <div class="paso-num">3</div>
+      <div class="paso-txt">Desplázate en el menú y toca <strong>"Añadir a pantalla de inicio"</strong></div>
+    </div>
+    <div class="paso-ios">
+      <div class="paso-num">4</div>
+      <div class="paso-txt">Toca <strong>"Agregar"</strong> arriba a la derecha. ¡Listo! Ya aparece como app en tu pantalla</div>
+    </div>
+
+    <div class="flecha-abajo">👇</div>
+    <button class="btn-cerrar-modal" onclick="cerrarModalIos()">Entendido, ya lo hice</button>
+  </div>
+</div>
+
+<!-- ════════════════════════════════════════════════════
+     APLICACIÓN (oculta por defecto)
+     ════════════════════════════════════════════════════ -->
+<div id="app-content">
+  <div class="header">
+    CALCU BIMONEDA
+    <span class="saved-badge" id="savedBadge">✓ tasas guardadas</span>
+  </div>
+
+  <!-- PESTAÑAS -->
+  <div class="tab-bar">
+    <button class="tab-btn activa" onclick="verTab('calc')" id="tab-calc">🧮 Calculadora</button>
+    <button class="tab-btn" onclick="verTab('cat')" id="tab-cat">📦 Catálogo</button>
+    <button class="tab-btn" onclick="verTab('carrito')" id="tab-carrito">🛒 Carrito <span class="badge-carrito" id="badge-cant" style="display:none">0</span></button>
+  </div>
+
+  <!-- ── VISTA CALCULADORA ── -->
+  <div class="vista activa" id="vista-calc">
+    <div class="body">
+      <div class="card">
+        <div class="sec-label">Tasas del día</div>
+        <div class="row2">
+          <div class="field-wrap">
+            <div class="field-label">Tasa BCV (Bs/$)</div>
+            <input class="field-input" type="number" id="bcv" step="0.01" inputmode="decimal" oninput="onTasaChange()">
+          </div>
+          <div class="field-wrap">
+            <div class="field-label">Tasa Binance (Bs/$)</div>
+            <input class="field-input" type="number" id="binance" step="0.01" inputmode="decimal" oninput="onTasaChange()">
+          </div>
+        </div>
+        <div class="factor-row">
+          <span class="factor-label">Factor de ajuste</span>
+          <span class="factor-val" id="factor">—</span>
+        </div>
+      </div>
+      <div class="card">
+        <div class="sec-label">TOTAL VENTA USD ($)</div>
+        <input class="field-input big" type="number" id="loyverse" placeholder="0.00" step="0.01" inputmode="decimal" oninput="calc()">
+        <div class="precio-sistema">
+          <span class="ps-label">Precio sistema en Bs</span>
+          <span class="ps-val" id="precioBs">Bs 0.00</span>
+        </div>
+      </div>
+      <div class="precio-card">
+        <div class="precio-tag">Precio especial en USD</div>
+        <div class="precio-monto" id="precioEspecial">$0.00</div>
+        <div class="precio-sub">Pago en efectivo/USDT</div>
+      </div>
+      <div class="card">
+        <div class="sec-label">Abonos</div>
+        <div class="row2">
+          <div class="field-wrap">
+            <div class="field-label">Abono en BS</div>
+            <input class="field-input" type="number" id="abonoBS" placeholder="0" inputmode="decimal" oninput="calc()">
+          </div>
+          <div class="field-wrap">
+            <div class="field-label">Abono en USD ($)</div>
+            <input class="field-input" type="number" id="abonoUSD" placeholder="0.00" step="0.01" inputmode="decimal" oninput="calc()">
+          </div>
+        </div>
+      </div>
+      <div class="resultados">
+        <div class="resultado-card">
+          <div class="res-label">Cobrar en BS</div>
+          <div class="res-val bs" id="cobrarBS">Bs 0.00</div>
+        </div>
+        <div class="resultado-card">
+          <div class="res-label">Cobrar en USD</div>
+          <div class="res-val usd" id="cobrarUSD">$0.00</div>
+        </div>
+      </div>
+      <button class="btn-nueva" onclick="nuevaVenta()">+ Nueva Venta</button>
+      <p class="footer">CALCU BIMONEDA · PROYECTO CRISTAL</p>
+    </div>
+  </div>
+
+  <!-- ── VISTA CATÁLOGO ── -->
+  <div class="vista" id="vista-cat">
+    <div class="buscador-wrap">
+      <input class="buscador" type="text" id="buscador-cat" placeholder="🔍 Buscar producto..." oninput="renderCatalogo()" autocomplete="off">
+    </div>
+    <div class="grid-cat" id="grid-catalogo">
+      <!-- productos se renderizan aquí -->
+    </div>
+  </div>
+
+  <!-- ── VISTA CARRITO ── -->
+  <div class="vista" id="vista-carrito">
+    <div class="carrito-wrap" id="carrito-wrap">
+      <!-- items se renderizan aquí -->
+    </div>
+  </div>
+</div>
+
+<!-- FAB: botón flotante agregar producto (visible solo en catálogo) -->
+<button class="fab" id="fab-agregar" onclick="abrirModalProducto()">＋ Nuevo producto</button>
+
+<!-- MODAL AGREGAR / EDITAR PRODUCTO -->
+<div class="modal-fondo" id="modal-producto">
+  <div class="modal-card">
+    <p class="modal-titulo" id="modal-prod-titulo">Nuevo producto</p>
+    <input type="hidden" id="prod-edit-id">
+
+    <div>
+      <label class="modal-label">Nombre del producto *</label>
+      <input class="field-input" type="text" id="prod-nombre" placeholder="Ej: Aceite de Motor INCA" autocomplete="off">
+    </div>
+    <div class="modal-row">
+      <div>
+        <label class="modal-label">Marca</label>
+        <input class="field-input" type="text" id="prod-marca" placeholder="Ej: INCA" autocomplete="off">
+      </div>
+      <div>
+        <label class="modal-label">Tipo</label>
+        <input class="field-input" type="text" id="prod-tipo" placeholder="Ej: Mineral" autocomplete="off">
+      </div>
+    </div>
+    <div class="modal-row">
+      <div>
+        <label class="modal-label">Viscosidad / Ref.</label>
+        <input class="field-input" type="text" id="prod-viscosidad" placeholder="Ej: 20W-50" autocomplete="off">
+      </div>
+      <div>
+        <label class="modal-label">Presentación</label>
+        <input class="field-input" type="text" id="prod-presentacion" placeholder="Ej: 1 litro" autocomplete="off">
+      </div>
+    </div>
+    <div>
+      <label class="modal-label">Precio en USD *</label>
+      <input class="field-input" type="number" id="prod-precio" placeholder="0.00" step="0.01" inputmode="decimal">
+    </div>
+    <button class="btn-modal-ok" onclick="guardarProducto()">✓ Guardar producto</button>
+    <button class="btn-eliminar-prod" id="btn-eliminar-prod" onclick="eliminarProducto()" style="display:none">🗑 Eliminar producto</button>
+    <button class="btn-modal-cancel" onclick="cerrarModalProducto()">Cancelar</button>
+  </div>
+</div>
+
+
+<script>
+/* ══════════════════════════════════════════════════════
+   SISTEMA DE LICENCIAS — PROYECTO CRISTAL
+   ══════════════════════════════════════════════════════
+
+   Flujo:
+   1. El <script> del <head> ya garantizó que el muro está
+      visible y la app oculta ANTES del primer paint.
+   2. Este script verifica localStorage al arrancar.
+   3. Si la licencia es válida → elimina el estilo de
+      emergencia y muestra la app.
+   4. Si no → muestra el ID del dispositivo en el muro.
+
+   Hash:
+   - Usamos la Web Crypto API (SubtleCrypto) que está
+     disponible en Chrome Android 37+ y Safari iOS 11+.
+   - Fallback a DJB2 de 32 bits si el navegador es muy
+     antiguo (aunque en 2024 no debería ocurrir).
+   ══════════════════════════════════════════════════════ */
+
+  var SAL = "CRISTAL_PRO_2026";
+
+  /* ── Instalación PWA ───────────────────────────────── */
+  var _promptInstall = null; // guarda el evento de Android
+
+  /* Android: captura el evento ANTES de que Chrome lo muestre */
+  window.addEventListener('beforeinstallprompt', function(e) {
+    e.preventDefault();
+    _promptInstall = e;
+    /* Muestra el botón solo en Android */
+    var btn = document.getElementById('btn-instalar');
+    if (btn) btn.style.display = 'block';
+  });
+
+  /* Si ya está instalada como PWA, oculta el botón */
+  window.addEventListener('appinstalled', function() {
+    var btn = document.getElementById('btn-instalar');
+    if (btn) btn.style.display = 'none';
+  });
+
+  function accionInstalar() {
+    var esIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) && !window.MSStream;
+    if (esIOS) {
+      /* iPhone: muestra el instructivo */
+      document.getElementById('modal-ios').classList.add('activo');
+    } else if (_promptInstall) {
+      /* Android: dispara la instalación directa */
+      _promptInstall.prompt();
+      _promptInstall.userChoice.then(function(r) {
+        if (r.outcome === 'accepted') {
+          var btn = document.getElementById('btn-instalar');
+          if (btn) btn.style.display = 'none';
+        }
+        _promptInstall = null;
+      });
+    }
+  }
+
+  /* En iOS mostramos el botón siempre (no hay evento beforeinstallprompt) */
+  (function() {
+    var esIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) && !window.MSStream;
+    /* Solo si NO está corriendo como PWA instalada */
+    var yaInstalada = window.navigator.standalone === true;
+    if (esIOS && !yaInstalada) {
+      var btn = document.getElementById('btn-instalar');
+      if (btn) {
+        btn.style.display = 'block';
+        btn.textContent = '📲 Cómo instalar en iPhone';
+      }
+    }
+  })();
+
+  function cerrarModalIos() {
+    document.getElementById('modal-ios').classList.remove('activo');
+  }
+
+  /* ── Genera o recupera el ID del dispositivo ───────── */
+  function gID() {
+    try {
+      var id = localStorage.getItem('_cid');
+      if (id) return id;
+
+      /* Mezclamos señales del navegador para mayor unicidad */
+      var seed = [
+        navigator.userAgent || '',
+        screen.width  + 'x' + screen.height,
+        navigator.language || '',
+        (navigator.hardwareConcurrency || 0).toString(),
+        new Date().getTimezoneOffset().toString()
+      ].join('|');
+
+      /* DJB2 de 32 bits — consistente entre plataformas */
+      var h = 5381;
+      for (var i = 0; i < seed.length; i++) {
+        /* Usamos >>> 0 para forzar unsigned 32-bit en TODOS
+           los navegadores, evitando diferencias entre iOS
+           y Android en operaciones de bits con signo.      */
+        h = (((h << 5) >>> 0) + h + seed.charCodeAt(i)) >>> 0;
+      }
+      id = "VZ-" + h.toString(16).toUpperCase().padStart(8, '0');
+      localStorage.setItem('_cid', id);
+      return id;
+    } catch(e) {
+      /* Si localStorage está bloqueado (modo privado iOS) */
+      return "VZ-NOLOC";
+    }
+  }
+
+  /* ── Genera la clave esperada a partir del ID ──────── */
+  function genClave(id) {
+    var base = id + SAL;
+    var h = 5381;
+    for (var i = 0; i < base.length; i++) {
+      h = (((h << 5) >>> 0) + h + base.charCodeAt(i)) >>> 0;
+    }
+    return "KEY-" + h.toString(36).toUpperCase().padStart(7, '0');
+  }
+
+  /* ── Muestra la app, oculta el muro ────────────────── */
+  function mostrarApp() {
+    /* 1. Elimina el estilo de emergencia del <head> */
+    var estiloEmergencia = document.getElementById('bloqueo-inicial');
+    if (estiloEmergencia) estiloEmergencia.parentNode.removeChild(estiloEmergencia);
+
+    /* 2. Oculta el muro con display:none */
+    var muro = document.getElementById('muro-bloqueo');
+    if (muro) {
+      muro.style.cssText = 'display:none !important';
+    }
+
+    /* 3. Muestra la app */
+    var app = document.getElementById('app-content');
+    if (app) {
+      app.style.cssText = 'display:block !important';
+    }
+
+    /* 4. Inicializa la calculadora y el catálogo */
+    cargarTasas();
+    calc();
+    actualizarBadge();
+  }
+
+  /* ── Verificación principal al cargar ──────────────── */
+  function verificarLicencia() {
+    try {
+      var licencia = localStorage.getItem('_prm');
+      if (licencia === 'true') {
+        mostrarApp();
+      } else {
+        /* Muestra el ID en el muro */
+        var idEl = document.getElementById('mi-id-display');
+        if (idEl) idEl.textContent = gID();
+      }
+    } catch(e) {
+      /* localStorage bloqueado → muestra muro siempre */
+      var idEl = document.getElementById('mi-id-display');
+      if (idEl) idEl.textContent = "VZ-NOLOC (modo privado)";
+    }
+  }
+
+  /* ── Solicitar acceso por WhatsApp ─────────────────── */
+  function pedirAcceso() {
+    var n = (document.getElementById('reg-nom').value || '').trim();
+    var c = (document.getElementById('reg-ci').value  || '').trim();
+    if (!n || !c) {
+      mostrarError("Completa tu nombre y cédula antes de solicitar.");
+      return;
+    }
+    var texto = "SOLICITUD ACTIVACION\nNombre: " + n + "\nCI: " + c + "\nID: " + gID();
+    window.open("https://wa.me/584129050524?text=" + encodeURIComponent(texto), '_blank');
+  }
+
+  /* ── Activar licencia con la clave ─────────────────── */
+  function activar() {
+    var entrada = (document.getElementById('clave-in').value || '').trim().toUpperCase();
+    if (!entrada) {
+      mostrarError("Ingresa la clave de activación.");
+      return;
+    }
+
+    var claveEsperada = genClave(gID());
+
+    /* DEBUG (eliminar en producción) — puedes ver la clave
+       en la consola del navegador para verificar:
+       console.log("Clave esperada:", claveEsperada);        */
+
+    if (entrada === claveEsperada) {
+      try {
+        localStorage.setItem('_prm', 'true');
+      } catch(e) { /* ignorar si no se puede guardar */ }
+      mostrarApp();
+    } else {
+      mostrarError("Clave inválida. Verifica e intenta de nuevo.");
+      /* Limpia el campo para reintentar */
+      document.getElementById('clave-in').value = '';
+    }
+  }
+
+  /* ── Muestra mensaje de error en el muro ─────────────*/
+  function mostrarError(txt) {
+    var el = document.getElementById('msg-error');
+    if (el) {
+      el.textContent = txt;
+      clearTimeout(el._t);
+      el._t = setTimeout(function() { el.textContent = ''; }, 4000);
+    }
+  }
+
+
+  /* ══════════════════════════════════════════════════════
+     CALCULADORA BIMONEDA — lógica original intacta
+     ══════════════════════════════════════════════════════ */
+
+  var DEFAULT_BCV     = 48.00;
+  var DEFAULT_BINANCE = 60.00;
+
+  function cargarTasas() {
+    var bcv     = localStorage.getItem('calcu_bcv');
+    var binance = localStorage.getItem('calcu_binance');
+    document.getElementById('bcv').value     = bcv     ? bcv     : DEFAULT_BCV;
+    document.getElementById('binance').value = binance ? binance : DEFAULT_BINANCE;
+  }
+
+  function onTasaChange() {
+    calc();
+    localStorage.setItem('calcu_bcv',     document.getElementById('bcv').value);
+    localStorage.setItem('calcu_binance', document.getElementById('binance').value);
+  }
+
+  function fmt(n) {
+    return n.toLocaleString('es-VE', { minimumFractionDigits: 2 });
+  }
+
+  /* ── Redondeo al medio dólar superior ──────────────────
+     Ejemplos:
+       2.00 → 2.00   (ya es múltiplo de 0.50, no sube)
+       2.01 → 2.50
+       2.50 → 2.50   (ya es múltiplo de 0.50, no sube)
+       2.51 → 3.00
+       3.99 → 4.00
+  ───────────────────────────────────────────────────── */
+  function redondearUSD(n) {
+    return Math.ceil(n * 2) / 2;
+  }
+
+  function calc() {
+    var bcv     = parseFloat(document.getElementById('bcv').value)     || 0;
+    var binance = parseFloat(document.getElementById('binance').value) || 0;
+    var loy     = parseFloat(document.getElementById('loyverse').value)|| 0;
+    var aBS     = parseFloat(document.getElementById('abonoBS').value) || 0;
+    var aUSD    = parseFloat(document.getElementById('abonoUSD').value)|| 0;
+
+    var factor = (bcv > 0) ? binance / bcv : 1;
+    document.getElementById('factor').textContent       = factor.toFixed(4);
+    document.getElementById('precioBs').textContent     = 'Bs ' + fmt(loy * bcv);
+
+    var especial = (factor > 0) ? loy / factor : 0;
+    document.getElementById('precioEspecial').textContent = '$' + redondearUSD(especial).toFixed(2);
+
+    var cobrarUSD = 0, cobrarBS = 0;
+
+    if (aBS > 0 && aUSD === 0) {
+      cobrarUSD = (loy - (aBS / bcv)) / factor;
+    } else if (aUSD > 0 && aBS === 0) {
+      cobrarBS = (loy - (aUSD * factor)) * bcv;
+    } else if (aBS > 0 && aUSD > 0) {
+      cobrarUSD = ((loy - (aBS / bcv)) / factor) - aUSD;
+      if (cobrarUSD < 0) {
+        cobrarBS  = Math.abs(cobrarUSD) * bcv;
+        cobrarUSD = 0;
+      }
+    } else {
+      cobrarUSD = especial;
+      cobrarBS  = loy * bcv;
+    }
+
+    document.getElementById('cobrarBS').textContent  = 'Bs ' + fmt(Math.max(0, cobrarBS));
+    document.getElementById('cobrarUSD').textContent = '$'   + redondearUSD(Math.max(0, cobrarUSD)).toFixed(2);
+  }
+
+  function nuevaVenta() {
+    document.getElementById('loyverse').value = '';
+    document.getElementById('abonoBS').value  = '';
+    document.getElementById('abonoUSD').value = '';
+    calc();
+  }
+
+
+  /* ══════════════════════════════════════════════════════
+     NAVEGACIÓN DE PESTAÑAS
+     ══════════════════════════════════════════════════════ */
+  function verTab(tab) {
+    ['calc','cat','carrito'].forEach(function(t) {
+      document.getElementById('vista-' + t).classList.remove('activa');
+      document.getElementById('tab-' + t).classList.remove('activa');
+    });
+    document.getElementById('vista-' + tab).classList.add('activa');
+    document.getElementById('tab-' + tab).classList.add('activa');
+
+    var fab = document.getElementById('fab-agregar');
+    if (tab === 'cat') {
+      fab.classList.add('visible');
+      renderCatalogo();
+    } else {
+      fab.classList.remove('visible');
+    }
+    if (tab === 'carrito') renderCarrito();
+  }
+
+  /* ══════════════════════════════════════════════════════
+     CATÁLOGO DE PRODUCTOS
+     Estructura de cada producto en localStorage:
+     { id, nombre, marca, tipo, viscosidad, presentacion, precioUSD }
+     ══════════════════════════════════════════════════════ */
+
+  function cargarProductos() {
+    try {
+      return JSON.parse(localStorage.getItem('cat_productos') || '[]');
+    } catch(e) { return []; }
+  }
+
+  function guardarProductos(lista) {
+    try { localStorage.setItem('cat_productos', JSON.stringify(lista)); } catch(e) {}
+  }
+
+  function renderCatalogo() {
+    var bcv = parseFloat(localStorage.getItem('calcu_bcv')) || 48;
+    var productos = cargarProductos();
+    var filtro = (document.getElementById('buscador-cat').value || '').toLowerCase();
+    var contenedor = document.getElementById('grid-catalogo');
+
+    if (filtro) {
+      productos = productos.filter(function(p) {
+        return (p.nombre + ' ' + p.marca + ' ' + p.viscosidad + ' ' + p.presentacion)
+          .toLowerCase().indexOf(filtro) >= 0;
+      });
+    }
+
+    if (productos.length === 0) {
+      contenedor.innerHTML = filtro
+        ? '<p class="sin-productos">Sin resultados para "' + filtro + '"</p>'
+        : '<p class="sin-productos">Aún no tienes productos.<br>Toca <strong>＋ Nuevo producto</strong> para agregar.</p>';
+      return;
+    }
+
+    contenedor.innerHTML = productos.map(function(p) {
+      var precioUSD = parseFloat(p.precioUSD) || 0;
+      var precioBs  = precioUSD * bcv;
+      var variante  = [p.marca, p.tipo, p.viscosidad, p.presentacion].filter(Boolean).join(' · ');
+      return '<div class="prod-card">' +
+        '<div class="prod-info" onclick="abrirModalEditar(\'' + p.id + '\')" style="cursor:pointer">' +
+          '<div class="prod-nombre">' + p.nombre + '</div>' +
+          (variante ? '<div class="prod-variante">' + variante + '</div>' : '') +
+        '</div>' +
+        '<div class="prod-precios">' +
+          '<div class="prod-usd">$' + redondearUSD(precioUSD).toFixed(2) + '</div>' +
+          '<div class="prod-bs">Bs ' + fmt(precioBs) + '</div>' +
+        '</div>' +
+        '<button class="btn-agregar-carrito" onclick="agregarAlCarrito(\'' + p.id + '\')" title="Agregar al carrito">+</button>' +
+      '</div>';
+    }).join('');
+  }
+
+  /* ── Modal producto ── */
+  function abrirModalProducto() {
+    document.getElementById('modal-prod-titulo').textContent = 'Nuevo producto';
+    document.getElementById('prod-edit-id').value = '';
+    document.getElementById('prod-nombre').value = '';
+    document.getElementById('prod-marca').value = '';
+    document.getElementById('prod-tipo').value = '';
+    document.getElementById('prod-viscosidad').value = '';
+    document.getElementById('prod-presentacion').value = '';
+    document.getElementById('prod-precio').value = '';
+    document.getElementById('btn-eliminar-prod').style.display = 'none';
+    document.getElementById('modal-producto').classList.add('activo');
+    setTimeout(function() { document.getElementById('prod-nombre').focus(); }, 300);
+  }
+
+  function abrirModalEditar(id) {
+    var productos = cargarProductos();
+    var p = productos.find(function(x) { return x.id === id; });
+    if (!p) return;
+    document.getElementById('modal-prod-titulo').textContent = 'Editar producto';
+    document.getElementById('prod-edit-id').value = p.id;
+    document.getElementById('prod-nombre').value = p.nombre || '';
+    document.getElementById('prod-marca').value = p.marca || '';
+    document.getElementById('prod-tipo').value = p.tipo || '';
+    document.getElementById('prod-viscosidad').value = p.viscosidad || '';
+    document.getElementById('prod-presentacion').value = p.presentacion || '';
+    document.getElementById('prod-precio').value = p.precioUSD || '';
+    document.getElementById('btn-eliminar-prod').style.display = 'block';
+    document.getElementById('modal-producto').classList.add('activo');
+  }
+
+  function cerrarModalProducto() {
+    document.getElementById('modal-producto').classList.remove('activo');
+  }
+
+  function guardarProducto() {
+    var nombre = document.getElementById('prod-nombre').value.trim();
+    var precio = parseFloat(document.getElementById('prod-precio').value);
+    if (!nombre) { alert('El nombre es obligatorio'); return; }
+    if (!precio || precio <= 0) { alert('Ingresa un precio válido'); return; }
+
+    var productos = cargarProductos();
+    var editId = document.getElementById('prod-edit-id').value;
+
+    var prod = {
+      id: editId || 'p' + Date.now(),
+      nombre: nombre,
+      marca: document.getElementById('prod-marca').value.trim(),
+      tipo: document.getElementById('prod-tipo').value.trim(),
+      viscosidad: document.getElementById('prod-viscosidad').value.trim(),
+      presentacion: document.getElementById('prod-presentacion').value.trim(),
+      precioUSD: precio
+    };
+
+    if (editId) {
+      var idx = productos.findIndex(function(x) { return x.id === editId; });
+      if (idx >= 0) productos[idx] = prod;
+    } else {
+      productos.push(prod);
+    }
+
+    guardarProductos(productos);
+    cerrarModalProducto();
+    renderCatalogo();
+  }
+
+  function eliminarProducto() {
+    var editId = document.getElementById('prod-edit-id').value;
+    if (!editId) return;
+    if (!confirm('¿Eliminar este producto?')) return;
+    var productos = cargarProductos().filter(function(p) { return p.id !== editId; });
+    guardarProductos(productos);
+    cerrarModalProducto();
+    renderCatalogo();
+  }
+
+  /* ══════════════════════════════════════════════════════
+     CARRITO
+     Estructura: [{ prodId, nombre, variante, precioUSD, cantidad }]
+     ══════════════════════════════════════════════════════ */
+
+  function cargarCarrito() {
+    try { return JSON.parse(localStorage.getItem('carrito_actual') || '[]'); } catch(e) { return []; }
+  }
+
+  function guardarCarrito(carrito) {
+    try { localStorage.setItem('carrito_actual', JSON.stringify(carrito)); } catch(e) {}
+    actualizarBadge();
+  }
+
+  function actualizarBadge() {
+    var carrito = cargarCarrito();
+    var total = carrito.reduce(function(s, i) { return s + i.cantidad; }, 0);
+    var badge = document.getElementById('badge-cant');
+    if (total > 0) {
+      badge.textContent = total;
+      badge.style.display = 'inline-flex';
+    } else {
+      badge.style.display = 'none';
+    }
+  }
+
+  function agregarAlCarrito(prodId) {
+    var productos = cargarProductos();
+    var p = productos.find(function(x) { return x.id === prodId; });
+    if (!p) return;
+
+    var carrito = cargarCarrito();
+    var variante = [p.marca, p.tipo, p.viscosidad, p.presentacion].filter(Boolean).join(' · ');
+    var existente = carrito.find(function(i) { return i.prodId === prodId; });
+
+    if (existente) {
+      existente.cantidad++;
+    } else {
+      carrito.push({ prodId: prodId, nombre: p.nombre, variante: variante, precioUSD: parseFloat(p.precioUSD), cantidad: 1 });
+    }
+
+    guardarCarrito(carrito);
+
+    /* Feedback visual rápido en el botón */
+    var btns = document.querySelectorAll('.btn-agregar-carrito');
+    /* pequeño efecto: cambiar tab badge */
+    actualizarBadge();
+  }
+
+  function renderCarrito() {
+    var carrito = cargarCarrito();
+    var bcv = parseFloat(localStorage.getItem('calcu_bcv')) || 48;
+    var contenedor = document.getElementById('carrito-wrap');
+
+    if (carrito.length === 0) {
+      contenedor.innerHTML = '<p class="carrito-vacio">El carrito está vacío.<br>Ve al catálogo y toca <strong>+</strong> para agregar productos.</p>';
+      return;
+    }
+
+    var totalUSD = carrito.reduce(function(s, i) { return s + (i.precioUSD * i.cantidad); }, 0);
+    var totalBs  = totalUSD * bcv;
+
+    var itemsHTML = carrito.map(function(item, idx) {
+      var subUSD = item.precioUSD * item.cantidad;
+      var subBs  = subUSD * bcv;
+      return '<div class="item-carrito">' +
+        '<div class="item-car-top">' +
+          '<div class="item-car-nombre">' + item.nombre + (item.variante ? '<br><span style="font-size:11px;color:#888;font-weight:400">' + item.variante + '</span>' : '') + '</div>' +
+          '<button class="btn-eliminar-item" onclick="eliminarDelCarrito(' + idx + ')">✕</button>' +
+        '</div>' +
+        '<div class="item-car-controles">' +
+          '<button class="btn-cant" onclick="cambiarCantidad(' + idx + ',-1)">−</button>' +
+          '<span class="cant-num">' + item.cantidad + '</span>' +
+          '<button class="btn-cant" onclick="cambiarCantidad(' + idx + ',1)">+</button>' +
+          '<span class="item-car-bs">$' + redondearUSD(subUSD).toFixed(2) + ' · Bs ' + fmt(subBs) + '</span>' +
+        '</div>' +
+      '</div>';
+    }).join('');
+
+    var resumenHTML = '<div class="resumen-carrito">' +
+      '<div class="resumen-fila"><span class="resumen-label">TOTAL EN USD</span></div>' +
+      '<div class="resumen-val-usd">$' + redondearUSD(totalUSD).toFixed(2) + '</div>' +
+      '<div class="resumen-fila"><span class="resumen-label">Equivalente en Bs (BCV)</span><span class="resumen-val-bs">Bs ' + fmt(totalBs) + '</span></div>' +
+    '</div>' +
+    '<button class="btn-cobrar" onclick="cobrarDesdeCarrito()">💰 Cobrar con calculadora</button>' +
+    '<button class="btn-limpiar-carrito" onclick="limpiarCarrito()">🗑 Vaciar carrito</button>';
+
+    contenedor.innerHTML = itemsHTML + resumenHTML;
+  }
+
+  function cambiarCantidad(idx, delta) {
+    var carrito = cargarCarrito();
+    carrito[idx].cantidad += delta;
+    if (carrito[idx].cantidad <= 0) carrito.splice(idx, 1);
+    guardarCarrito(carrito);
+    renderCarrito();
+  }
+
+  function eliminarDelCarrito(idx) {
+    var carrito = cargarCarrito();
+    carrito.splice(idx, 1);
+    guardarCarrito(carrito);
+    renderCarrito();
+  }
+
+  function limpiarCarrito() {
+    if (!confirm('¿Vaciar el carrito?')) return;
+    guardarCarrito([]);
+    renderCarrito();
+  }
+
+  function cobrarDesdeCarrito() {
+    var carrito = cargarCarrito();
+    var totalUSD = carrito.reduce(function(s, i) { return s + (i.precioUSD * i.cantidad); }, 0);
+    /* Carga el total en la calculadora y cambia a esa pestaña */
+    verTab('calc');
+    document.getElementById('loyverse').value = totalUSD.toFixed(2);
+    document.getElementById('abonoBS').value = '';
+    document.getElementById('abonoUSD').value = '';
+    calc();
+    /* Scroll arriba */
+    window.scrollTo(0, 0);
+  }
+
+
+  /* ══════════════════════════════════════════════════════
+     ARRANQUE
+     Usamos DOMContentLoaded + window.onload como doble
+     red de seguridad para cubrir Safari iOS y Android.
+     ══════════════════════════════════════════════════════ */
+
+  var _verificado = false;
+
+  function _arrancar() {
+    if (_verificado) return;   /* evita doble ejecución */
+    _verificado = true;
+    verificarLicencia();
+  }
+
+  /* Dispara en cuanto el DOM está listo (antes de imágenes) */
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', _arrancar);
+  } else {
+    /* El DOM ya estaba listo (poco probable pero cubre edge cases) */
+    _arrancar();
+  }
+
+  /* Segunda red: window.onload cubre casos donde el Service
+     Worker de la PWA retrasa DOMContentLoaded             */
+  window.addEventListener('load', _arrancar);
+
+</script>
+</body>
+</html>
