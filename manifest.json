@@ -1,11 +1,11 @@
 {
-  "name": "Calculadora Bimoneda",
+  "name": "Calcu Bimoneda",
   "short_name": "Bimoneda",
   "start_url": "./index.html",
   "display": "standalone",
-  "background_color": "#0c0f16",
-  "theme_color": "#E84E0F",
-  "description": "Calculadora rápida para cobros simultáneos en Bs y USD",
+  "background_color": "#0F172A",
+  "theme_color": "#FF6B00",
+  "description": "Calculadora rápida para cobros simultáneos en Bs y USD con protección de margen",
   "orientation": "portrait",
   "icons": [
     {
