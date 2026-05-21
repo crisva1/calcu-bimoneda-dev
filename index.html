@@ -1,34 +1,34 @@
 <!DOCTYPE html>
-<html lang="es">
+<html lang="es" data-theme="light">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
 <meta name="apple-mobile-web-app-capable" content="yes">
-<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
 <meta name="apple-mobile-web-app-title" content="Bimoneda">
-<meta name="theme-color" content="#FF6B00">
+<meta name="theme-color" content="#FF6B00" id="meta-theme-color">
 <title>Calcu Bimoneda</title>
 <link rel="apple-touch-icon" href="./icon-192.png">
 <link rel="icon" type="image/png" href="./icon-192.png">
 <link rel="manifest" href="./manifest.json">
 <link rel="stylesheet" href="./styles.css">
 
-<!--
-  ╔═══════════════════════════════════════════════════╗
-  ║  BLOQUEO CRÍTICO — corre ANTES del primer paint  ║
-  ║  Si la licencia está activa, oculta el muro.     ║
-  ║  Síncrono a propósito. NO usar defer/async.      ║
-  ╚═══════════════════════════════════════════════════╝
--->
+<!-- BLOQUEO CRÍTICO: sincrónico, antes del primer paint -->
 <script>
-  (function() {
-    var s = document.createElement('style');
-    s.id = 'bloqueo-inicial';
-    s.textContent =
-      '#muro-bloqueo { display:flex !important; }' +
-      '#app-content   { display:none !important; }';
-    document.head.appendChild(s);
-  })();
+(function() {
+  // Aplicar tema guardado antes de pintar (evita flash)
+  var t = localStorage.getItem('calcu_tema') || 'light';
+  document.documentElement.setAttribute('data-theme', t);
+
+  // Bloquear app hasta verificar licencia
+  var s = document.createElement('style');
+  s.id = 'bloqueo-inicial';
+  s.textContent =
+    '#muro-bloqueo { display:flex !important; }' +
+    '#app-content   { display:none  !important; }' +
+    '#screen-onboarding { display:none !important; }';
+  document.head.appendChild(s);
+})();
 </script>
 </head>
 <body>
@@ -38,23 +38,42 @@
      ════════════════════════════════════════════════════ -->
 <div id="muro-bloqueo">
 
-  <!-- Logo -->
   <div class="muro-logo">
     <div class="muro-logo-icon">🧮</div>
     <div class="muro-logo-name">CALCU BIMONEDA</div>
-    <div class="muro-logo-sub">PROYECTO CRISTAL · ACTIVACIÓN</div>
+    <div class="muro-logo-sub">Proyecto Cristal · Activación de licencia</div>
   </div>
 
-  <!-- Tarjeta de seguridad -->
   <div class="card-seg">
 
-    <!-- Botón instalar (visible solo si aplica) -->
-    <button id="btn-instalar" onclick="accionInstalar()">📲 Instalar App en mi celular</button>
+    <!-- Banner instalación Android -->
+    <div class="install-banner" id="banner-android">
+      <div class="install-banner-icon">📲</div>
+      <div class="install-banner-text">
+        <div class="install-banner-title">Instalar como app</div>
+        <div class="install-banner-sub">
+          Toca el botón e instala la app. Luego búscala en tu lista de aplicaciones o pantalla de inicio.
+        </div>
+        <button class="install-banner-btn" onclick="accionInstalar()">Instalar app en Android</button>
+      </div>
+    </div>
+
+    <!-- Banner instalación iOS -->
+    <div class="install-banner" id="banner-ios">
+      <div class="install-banner-icon">📱</div>
+      <div class="install-banner-text">
+        <div class="install-banner-title">Instalar en iPhone</div>
+        <div class="install-banner-sub">
+          Abre en Safari → toca compartir → "Añadir a pantalla de inicio". Luego búscala entre tus apps instaladas.
+        </div>
+        <button class="install-banner-btn" onclick="accionInstalar()" style="background:#007AFF;">Ver instrucciones</button>
+      </div>
+    </div>
 
     <!-- Datos del usuario -->
     <div>
-      <div class="id-label">Tus datos de registro</div>
-      <div style="display:flex; flex-direction:column; gap:10px; margin-top:8px;">
+      <div class="seg-section-label">Tus datos</div>
+      <div style="display:flex; flex-direction:column; gap:9px; margin-top:8px;">
         <input class="field-input" type="text" id="reg-nom"
           placeholder="Nombre y Apellido" autocomplete="off">
         <input class="field-input" type="text" id="reg-ci"
@@ -64,29 +83,26 @@
 
     <!-- ID del dispositivo -->
     <div>
-      <div class="id-label">ID de dispositivo</div>
+      <div class="id-label">ID de tu dispositivo</div>
       <div class="id-box" id="mi-id-display">Calculando…</div>
     </div>
 
-    <!-- Solicitar por WhatsApp -->
     <button class="btn btn-ws" onclick="pedirAcceso()">
-      📲 Solicitar Activación por WhatsApp
+      📲 Solicitar activación por WhatsApp
     </button>
 
     <div class="divider"></div>
 
-    <!-- Ingresar clave -->
-    <div style="display:flex; flex-direction:column; gap:8px;">
-      <div class="id-label">Clave de activación</div>
+    <!-- Activar clave -->
+    <div>
+      <div class="seg-section-label" style="margin-bottom:8px;">Tengo mi clave</div>
       <input class="field-input" type="text" id="clave-in"
-        placeholder="Pega tu clave aquí"
+        placeholder="Pega aquí tu clave de activación"
         autocomplete="off" autocorrect="off"
         autocapitalize="characters" spellcheck="false">
     </div>
 
-    <button class="btn btn-act" onclick="activar()">
-      🔓 Activar Licencia
-    </button>
+    <button class="btn btn-act" onclick="activar()">🔓 Activar licencia</button>
 
     <p class="msg-error" id="msg-error"></p>
   </div>
@@ -95,39 +111,29 @@
 <!-- Modal instrucciones iOS -->
 <div id="modal-ios">
   <div class="modal-ios-card">
-    <p class="modal-ios-titulo">📱 Cómo instalar en iPhone</p>
+    <p class="modal-ios-titulo">📱 Instalar en iPhone / iPad</p>
     <div class="paso-ios">
       <div class="paso-num">1</div>
-      <div class="paso-txt">
-        Abre este enlace en <strong>Safari</strong> (no Chrome ni otro navegador)
-      </div>
+      <div class="paso-txt">Abre este enlace en <strong>Safari</strong> (no Chrome ni otro navegador)</div>
     </div>
     <div class="paso-ios">
       <div class="paso-num">2</div>
-      <div class="paso-txt">
-        Toca el ícono de <strong>compartir</strong> — el cuadrado con flecha hacia arriba en la barra inferior
-      </div>
+      <div class="paso-txt">Toca el ícono de <strong>compartir</strong> — el cuadrado con flecha hacia arriba, en la barra inferior</div>
     </div>
     <div class="paso-ios">
       <div class="paso-num">3</div>
-      <div class="paso-txt">
-        Desplázate y toca <strong>"Añadir a pantalla de inicio"</strong>
-      </div>
+      <div class="paso-txt">Desplázate y toca <strong>"Añadir a pantalla de inicio"</strong></div>
     </div>
     <div class="paso-ios">
       <div class="paso-num">4</div>
-      <div class="paso-txt">
-        Toca <strong>"Agregar"</strong> arriba a la derecha. ¡Listo!
-      </div>
+      <div class="paso-txt">Toca <strong>"Agregar"</strong>. Luego busca el ícono de Bimoneda entre tus apps instaladas.</div>
     </div>
-    <button class="btn-cerrar-modal" onclick="cerrarModalIos()">
-      ✓ Entendido, ya lo hice
-    </button>
+    <button class="btn-cerrar-modal" onclick="cerrarModalIos()">✓ Entendido</button>
   </div>
 </div>
 
 <!-- ════════════════════════════════════════════════════
-     ONBOARDING — Configuración inicial de tasas
+     ONBOARDING — Config inicial de tasas
      ════════════════════════════════════════════════════ -->
 <div id="screen-onboarding">
   <div class="onboarding-logo">
@@ -135,45 +141,120 @@
     <div class="onboarding-title">Calcu Bimoneda</div>
     <div class="onboarding-sub">Ingresa las tasas del día para comenzar a cobrar</div>
   </div>
-
   <div class="onboarding-card">
-    <div class="onboarding-step">Configuración inicial</div>
-
-    <!-- Tasas BCV -->
-    <div class="onboarding-group">
-      <div class="onboarding-group-label">🏛️ Tasas BCV oficiales</div>
-      <div class="onboarding-row">
-        <div class="field-wrap">
-          <div class="field-label">USD BCV (Bs/$)</div>
-          <input class="field-input" type="number" id="ob-bcv"
-            step="0.01" inputmode="decimal" placeholder="0.00">
-        </div>
-        <div class="field-wrap">
-          <div class="field-label">EUR BCV (Bs/€)</div>
-          <input class="field-input" type="number" id="ob-eur"
-            step="0.01" inputmode="decimal" placeholder="0.00">
-        </div>
+    <div class="onboarding-step">⚙️ Configuración inicial</div>
+    <div class="ob-row">
+      <div class="ob-field">
+        <div class="ob-label">USD BCV (Bs/$)</div>
+        <input class="field-input tasa" type="number" id="ob-bcv"
+          step="0.01" inputmode="decimal" placeholder="0.00">
       </div>
-    </div>
-
-    <!-- Tasa mercado -->
-    <div class="onboarding-group">
-      <div class="onboarding-group-label">📊 Tasa USD Mercado</div>
-      <div class="field-wrap">
-        <div class="field-label">USD Mercado / USDT (Bs/$)</div>
-        <input class="field-input" type="number" id="ob-mercado"
+      <div class="ob-field">
+        <div class="ob-label">USD Mercado (Bs/$)</div>
+        <input class="field-input tasa" type="number" id="ob-mercado"
           step="0.01" inputmode="decimal" placeholder="0.00">
       </div>
     </div>
-
-    <div class="hint-text">
-      💡 La brecha entre BCV y Mercado define tu <strong>Protección de margen</strong>.
-      Puedes actualizar estas tasas en cualquier momento.
+    <div class="hint-box">
+      💡 La brecha entre <strong>BCV</strong> y <strong>Mercado</strong> activa la protección de tu margen. Puedes editarlas después desde el menú.
     </div>
+    <button class="btn btn-primary" onclick="confirmarOnboarding()">✓ Comenzar a cobrar</button>
+  </div>
+</div>
 
-    <button class="btn btn-primary" onclick="confirmarOnboarding()">
-      ✓ Comenzar a cobrar
+<!-- ════════════════════════════════════════════════════
+     MENÚ LATERAL (Drawer)
+     ════════════════════════════════════════════════════ -->
+<div id="drawer-overlay" onclick="cerrarDrawer()"></div>
+<div id="drawer">
+  <div class="drawer-header">
+    <div class="drawer-logo-icon">🧮</div>
+    <div class="drawer-logo-text">
+      <div class="drawer-logo-name">CALCU BIMONEDA</div>
+      <div class="drawer-logo-sub">Proyecto Cristal</div>
+    </div>
+    <button class="drawer-close" onclick="cerrarDrawer()">✕</button>
+  </div>
+
+  <!-- Sección: Configuración -->
+  <div class="drawer-section">
+    <div class="drawer-section-label">Configuración</div>
+
+    <button class="drawer-item" onclick="abrirConfigTasas()">
+      <div class="drawer-item-icon orange">📊</div>
+      <div class="drawer-item-text">
+        <div class="drawer-item-title">Tasas del día</div>
+        <div class="drawer-item-sub" id="drawer-tasas-sub">BCV y USD Mercado</div>
+      </div>
+      <span class="drawer-item-arrow">›</span>
     </button>
+
+    <button class="drawer-item" onclick="abrirSelectorModo()">
+      <div class="drawer-item-icon blue">🛡️</div>
+      <div class="drawer-item-text">
+        <div class="drawer-item-title">Modo de cobro</div>
+        <div class="drawer-item-sub" id="drawer-modo-sub">Cobro protegido</div>
+      </div>
+      <span class="drawer-item-arrow">›</span>
+    </button>
+  </div>
+
+  <div class="drawer-divider"></div>
+
+  <!-- Sección: Apariencia -->
+  <div class="drawer-section">
+    <div class="drawer-section-label">Apariencia</div>
+    <div class="theme-toggle-row">
+      <div class="drawer-item-icon gray">🌙</div>
+      <div class="theme-toggle-info">
+        <div class="theme-toggle-title">Modo oscuro</div>
+        <div class="theme-toggle-sub">Cambiar entre claro y oscuro</div>
+      </div>
+      <label class="toggle-switch">
+        <input type="checkbox" id="toggle-dark" onchange="toggleTema()">
+        <span class="toggle-track"></span>
+      </label>
+    </div>
+  </div>
+
+  <div class="drawer-divider"></div>
+
+  <!-- Sección: Soporte -->
+  <div class="drawer-section">
+    <div class="drawer-section-label">Soporte</div>
+
+    <button class="drawer-item" onclick="irSoporte()">
+      <div class="drawer-item-icon green">💬</div>
+      <div class="drawer-item-text">
+        <div class="drawer-item-title">Soporte por WhatsApp</div>
+        <div class="drawer-item-sub">Consultas y activaciones</div>
+      </div>
+      <span class="drawer-item-arrow">›</span>
+    </button>
+
+    <button class="drawer-item" onclick="mostrarAcercaDe()">
+      <div class="drawer-item-icon gray">ℹ️</div>
+      <div class="drawer-item-text">
+        <div class="drawer-item-title">Acerca de</div>
+        <div class="drawer-item-sub">Versión y licencia</div>
+      </div>
+      <span class="drawer-item-arrow">›</span>
+    </button>
+  </div>
+
+  <div class="drawer-footer">Calcu Bimoneda v3 · 2025</div>
+</div>
+
+<!-- Modal selector de modo de cobro -->
+<div id="modal-config" onclick="cerrarModalConfig()">
+  <div class="modal-config-card" onclick="event.stopPropagation()">
+    <div class="modal-config-header">
+      <div class="modal-config-title" id="modal-config-title">Tasas del día</div>
+      <button class="modal-config-close" onclick="cerrarModalConfig()">✕</button>
+    </div>
+    <div id="modal-config-body">
+      <!-- Se llena dinámicamente -->
+    </div>
   </div>
 </div>
 
@@ -182,61 +263,32 @@
      ════════════════════════════════════════════════════ -->
 <div id="app-content">
 
-  <!-- Header sticky -->
+  <!-- Header -->
   <div class="header">
-    <div class="header-brand">
-      <div class="header-icon">🧮</div>
-      <span class="header-name">BIMONEDA</span>
-      <span class="saved-badge" id="savedBadge">✓ tasas guardadas</span>
+    <div class="header-left">
+      <div class="hamburger-btn" onclick="abrirDrawer()">
+        <div class="ham-line"></div>
+        <div class="ham-line"></div>
+        <div class="ham-line"></div>
+      </div>
+      <div class="header-brand">
+        <div class="header-icon">🧮</div>
+        <span class="header-name">BIMONEDA</span>
+        <span class="saved-badge" id="savedBadge">✓ guardado</span>
+      </div>
     </div>
     <div class="header-right">
-      <button id="mode-pill" class="mode-pill protected"
-        onclick="editarTasas()" title="Toca para actualizar tasas">
-        <span class="mode-pill-dot"></span>PROTEGIDO
-      </button>
+      <div class="mode-pill protected" id="mode-pill">
+        <span class="mode-pill-dot"></span>
+        <span id="mode-pill-txt">PROTEGIDO</span>
+      </div>
     </div>
   </div>
 
-  <!-- Cuerpo de la app -->
+  <!-- Cuerpo calculadora -->
   <div class="body">
 
-    <!-- ── SELECTOR DE MODO ── -->
-    <div class="mode-selector">
-      <button id="btn-modo-protected" class="mode-btn active-protected"
-        onclick="setModo('protected')">
-        🛡️ Cobro protegido
-      </button>
-      <button id="btn-modo-bcv" class="mode-btn"
-        onclick="setModo('bcv')">
-        🏛️ Cobro BCV
-      </button>
-    </div>
-
-    <!-- Info del modo seleccionado -->
-    <div id="mode-info" class="mode-info"></div>
-
-    <!-- ── TASAS DEL DÍA ── -->
-    <div class="card">
-      <div class="sec-label">Tasas del día</div>
-      <div class="row2">
-        <div class="field-wrap">
-          <div class="field-label">USD BCV (Bs/$)</div>
-          <input class="field-input" type="number" id="bcv"
-            step="0.01" inputmode="decimal" oninput="onTasaChange()">
-        </div>
-        <div class="field-wrap">
-          <div class="field-label">USD Mercado (Bs/$)</div>
-          <input class="field-input" type="number" id="mercado"
-            step="0.01" inputmode="decimal" oninput="onTasaChange()">
-        </div>
-      </div>
-      <div class="factor-row">
-        <span class="factor-label">Protección de margen</span>
-        <span class="factor-val" id="factor">—</span>
-      </div>
-    </div>
-
-    <!-- ── MONTO DE VENTA ── -->
+    <!-- Monto de venta -->
     <div class="card">
       <div class="sec-label">Total venta en USD</div>
       <input class="field-input big" type="number" id="loyverse"
@@ -247,31 +299,31 @@
       </div>
     </div>
 
-    <!-- ── PRECIO PROTEGIDO EN USD ── -->
+    <!-- Precio protegido en USD -->
     <div class="precio-card">
       <div class="precio-tag">Pago en divisas</div>
       <div class="precio-monto" id="precioEspecial">$0.00</div>
       <div class="precio-sub">Efectivo · USDT · Zelle</div>
     </div>
 
-    <!-- ── ABONOS PARCIALES ── -->
+    <!-- Abonos -->
     <div class="card">
-      <div class="sec-label">Abonos</div>
+      <div class="sec-label">Abonos parciales</div>
       <div class="row2">
         <div class="field-wrap">
           <div class="field-label">Abono en Bs</div>
-          <input class="field-input" type="number" id="abonoBS"
+          <input class="field-input abono" type="number" id="abonoBS"
             placeholder="0.00" inputmode="decimal" oninput="calc()">
         </div>
         <div class="field-wrap">
           <div class="field-label">Abono en USD ($)</div>
-          <input class="field-input" type="number" id="abonoUSD"
+          <input class="field-input abono" type="number" id="abonoUSD"
             placeholder="0.00" step="0.01" inputmode="decimal" oninput="calc()">
         </div>
       </div>
     </div>
 
-    <!-- ── RESULTADOS FINALES ── -->
+    <!-- Resultados finales -->
     <div class="resultados">
       <div class="resultado-card bs-card">
         <div class="res-label">Cobrar en Bs</div>
@@ -283,25 +335,22 @@
       </div>
     </div>
 
-    <!-- ── NUEVA VENTA ── -->
+    <!-- Nueva venta -->
     <button class="btn-nueva" onclick="nuevaVenta()">+ Nueva venta</button>
 
-    <p class="footer">CALCU BIMONEDA · PROYECTO CRISTAL</p>
+    <p class="footer">Calcu Bimoneda · Proyecto Cristal</p>
   </div>
+</div>
 
-</div><!-- /#app-content -->
-
-<!-- Service Worker registration -->
+<!-- Service Worker -->
 <script>
-  if ('serviceWorker' in navigator) {
-    window.addEventListener('load', function() {
-      navigator.serviceWorker.register('./sw.js').catch(function() {});
-    });
-  }
+if ('serviceWorker' in navigator) {
+  window.addEventListener('load', function() {
+    navigator.serviceWorker.register('./sw.js').catch(function(){});
+  });
+}
 </script>
 
-<!-- App principal -->
 <script src="./app.js"></script>
-
 </body>
 </html>

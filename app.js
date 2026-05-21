@@ -1,51 +1,90 @@
 /* ═══════════════════════════════════════════════════════
-   CALCU BIMONEDA — app.js
-   Lógica principal. Separada en módulos funcionales.
-   NO se modifica ninguna fórmula financiera.
-
-   Módulos:
-   1. Config & constantes
-   2. Sistema de licencias (Proyecto Cristal)
-   3. Instalación PWA
-   4. Onboarding inicial de tasas
-   5. Selector de modo de cobro
-   6. Calculadora bimoneda (lógica original intacta)
-   7. Arranque
+   CALCU BIMONEDA v3 — app.js
+   Módulos: Config · Licencia · PWA · Tema · Drawer ·
+            Onboarding · ModoSelector · Calculadora · App
+   Lógica financiera original 100% intacta.
    ═══════════════════════════════════════════════════════ */
 
 /* ════════════════════════════════════════════════════════
-   1. CONFIG & CONSTANTES
+   1. CONFIG
    ════════════════════════════════════════════════════════ */
-
 const CONFIG = {
-  SAL:             "aleiluisolcris*1",
-  DEFAULT_BCV:     48.00,
-  DEFAULT_MERCADO: 60.00,
-  DEFAULT_EUR_BCV: 52.00,
-  WS_NUMBER:       "584129050524",
-  STORAGE: {
-    LICENCIA:    '_prm',
-    DEVICE_ID:   '_cid',
-    BCV:         'calcu_bcv',
-    MERCADO:     'calcu_binance',   // Mantenemos la misma clave de storage para compatibilidad
-    EUR_BCV:     'calcu_eur_bcv',
-    MODO:        'calcu_modo',
-    ONBOARDING:  'calcu_onboarding_done',
+  SAL:            "aleiluisolcris*1",
+  DEFAULT_BCV:    48.00,
+  DEFAULT_MERCADO:60.00,
+  WS_NUMBER:      "584129050524",
+  VERSION:        "3.0",
+  SK: {
+    LICENCIA:     '_prm',
+    DEVICE_ID:    '_cid',
+    BCV:          'calcu_bcv',
+    MERCADO:      'calcu_binance',   // misma clave que v1/v2 para compatibilidad
+    MODO:         'calcu_modo',
+    ONBOARDING:   'calcu_onboarding_done',
+    TEMA:         'calcu_tema',
+    FECHA_TASAS:  'calcu_fecha_tasas',  // fecha en que se guardaron las tasas (YYYY-MM-DD)
   }
 };
 
 /* ════════════════════════════════════════════════════════
-   2. SISTEMA DE LICENCIAS — Proyecto Cristal
+   2. RESET DIARIO DE TASAS
+   Las tasas se invalidan automáticamente al cambiar el día.
+   Funciona 100% offline comparando la fecha guardada con
+   la fecha actual del dispositivo. No necesita servidor.
    ════════════════════════════════════════════════════════ */
+const ResetDiario = {
 
+  /* Retorna la fecha de hoy como string "YYYY-MM-DD" */
+  hoy() {
+    const d = new Date();
+    const y = d.getFullYear();
+    const m = String(d.getMonth() + 1).padStart(2, '0');
+    const dia = String(d.getDate()).padStart(2, '0');
+    return `${y}-${m}-${dia}`;
+  },
+
+  /* Guarda la fecha de hoy junto con las tasas */
+  marcarFecha() {
+    try {
+      localStorage.setItem(CONFIG.SK.FECHA_TASAS, this.hoy());
+    } catch(e) {}
+  },
+
+  /* Verifica si las tasas son de un día anterior */
+  tasasSonDeHoy() {
+    try {
+      const fechaGuardada = localStorage.getItem(CONFIG.SK.FECHA_TASAS);
+      if (!fechaGuardada) return false;       // nunca se guardaron
+      return fechaGuardada === this.hoy();
+    } catch(e) {
+      return false;
+    }
+  },
+
+  /* Borra las tasas guardadas (pero NO el modo ni el tema) */
+  limpiarTasas() {
+    try {
+      localStorage.removeItem(CONFIG.SK.BCV);
+      localStorage.removeItem(CONFIG.SK.MERCADO);
+      localStorage.removeItem(CONFIG.SK.FECHA_TASAS);
+      localStorage.removeItem(CONFIG.SK.ONBOARDING);
+    } catch(e) {}
+  },
+
+  /* Punto de entrada: verificar al abrir la app.
+     Si las tasas son de ayer o antes → limpiar y pedir de nuevo. */
+  verificar() {
+    if (!this.tasasSonDeHoy()) {
+      this.limpiarTasas();
+      // El onboarding se mostrará automáticamente porque ONBOARDING ya no es 'done'
+    }
+  }
+};
 const Licencia = {
-
-  /* Genera o recupera el ID único del dispositivo */
   getID() {
     try {
-      let id = localStorage.getItem(CONFIG.STORAGE.DEVICE_ID);
+      let id = localStorage.getItem(CONFIG.SK.DEVICE_ID);
       if (id) return id;
-
       const seed = [
         navigator.userAgent || '',
         screen.width + 'x' + screen.height,
@@ -53,75 +92,48 @@ const Licencia = {
         (navigator.hardwareConcurrency || 0).toString(),
         new Date().getTimezoneOffset().toString()
       ].join('|');
-
-      // DJB2 hash de 32-bit (unsigned, consistente cross-platform)
       let h = 5381;
       for (let i = 0; i < seed.length; i++) {
         h = (((h << 5) >>> 0) + h + seed.charCodeAt(i)) >>> 0;
       }
-
-      id = "VZ-" + h.toString(16).toUpperCase().padStart(8, '0');
-      localStorage.setItem(CONFIG.STORAGE.DEVICE_ID, id);
+      id = "VZ-" + h.toString(16).toUpperCase().padStart(8,'0');
+      localStorage.setItem(CONFIG.SK.DEVICE_ID, id);
       return id;
-    } catch (e) {
-      return "VZ-NOLOC";
-    }
+    } catch(e) { return "VZ-NOLOC"; }
   },
 
-  /* Genera la clave esperada para un ID dado */
   genClave(id) {
     const base = id + CONFIG.SAL;
     let h = 5381;
     for (let i = 0; i < base.length; i++) {
       h = (((h << 5) >>> 0) + h + base.charCodeAt(i)) >>> 0;
     }
-    return "KEY-" + h.toString(36).toUpperCase().padStart(7, '0');
+    return "KEY-" + h.toString(36).toUpperCase().padStart(7,'0');
   },
 
-  /* Verifica si la licencia está activa */
   estaActiva() {
-    try {
-      return localStorage.getItem(CONFIG.STORAGE.LICENCIA) === 'true';
-    } catch (e) {
-      return false;
-    }
+    try { return localStorage.getItem(CONFIG.SK.LICENCIA) === 'true'; }
+    catch(e) { return false; }
   },
 
-  /* Muestra el muro de activación */
   mostrarMuro() {
-    const idEl = document.getElementById('mi-id-display');
-    if (idEl) idEl.textContent = this.getID();
+    const el = document.getElementById('mi-id-display');
+    if (el) el.textContent = this.getID();
   },
 
-  /* Solicitar acceso vía WhatsApp */
   pedirAcceso() {
     const n = (document.getElementById('reg-nom').value || '').trim();
     const c = (document.getElementById('reg-ci').value  || '').trim();
-
-    if (!n || !c) {
-      this.mostrarError("Completa tu nombre y cédula primero.");
-      return;
-    }
-
-    const texto = `SOLICITUD ACTIVACION\nNombre: ${n}\nCI: ${c}\nID: ${this.getID()}`;
-    window.open(`https://wa.me/${CONFIG.WS_NUMBER}?text=${encodeURIComponent(texto)}`, '_blank');
+    if (!n || !c) { this.mostrarError("Completa tu nombre y cédula primero."); return; }
+    const txt = `SOLICITUD ACTIVACION\nNombre: ${n}\nCI: ${c}\nID: ${this.getID()}`;
+    window.open(`https://wa.me/${CONFIG.WS_NUMBER}?text=${encodeURIComponent(txt)}`, '_blank');
   },
 
-  /* Validar e ingresar clave de activación */
   activar() {
     const entrada = (document.getElementById('clave-in').value || '').trim().toUpperCase();
-
-    if (!entrada) {
-      this.mostrarError("Ingresa la clave de activación.");
-      return;
-    }
-
-    const claveEsperada = this.genClave(this.getID());
-
-    if (entrada === claveEsperada) {
-      try {
-        localStorage.setItem(CONFIG.STORAGE.LICENCIA, 'true');
-      } catch (e) { /* ignorar */ }
+    if (!entrada) { this.mostrarError("Ingresa la clave de activación."); return; }
+    if (entrada === this.genClave(this.getID())) {
+      try { localStorage.setItem(CONFIG.SK.LICENCIA, 'true'); } catch(e) {}
       App.mostrar();
     } else {
       this.mostrarError("Clave inválida. Verifica e intenta de nuevo.");
@@ -129,7 +141,6 @@ const Licencia = {
     }
   },
 
-  /* Muestra error en el muro */
   mostrarError(txt) {
     const el = document.getElementById('msg-error');
     if (!el) return;
@@ -142,34 +153,30 @@ const Licencia = {
 /* ════════════════════════════════════════════════════════
    3. INSTALACIÓN PWA
    ════════════════════════════════════════════════════════ */
-
 const InstallPWA = {
   _prompt: null,
 
   init() {
-    // Android: captura el evento antes de que Chrome lo muestre
+    const esIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) && !window.MSStream;
+    const yaInstalada = window.navigator.standalone === true;
+
     window.addEventListener('beforeinstallprompt', (e) => {
       e.preventDefault();
       this._prompt = e;
-      const btn = document.getElementById('btn-instalar');
-      if (btn) btn.style.display = 'block';
+      // Mostrar banner Android en el muro
+      const b = document.getElementById('banner-android');
+      if (b) b.classList.add('visible');
     });
 
-    // Si ya está instalada, oculta el botón
     window.addEventListener('appinstalled', () => {
-      const btn = document.getElementById('btn-instalar');
-      if (btn) btn.style.display = 'none';
+      const b = document.getElementById('banner-android');
+      if (b) b.classList.remove('visible');
     });
 
-    // iOS: siempre muestra el botón si no está en modo standalone
-    const esIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) && !window.MSStream;
-    const yaInstalada = window.navigator.standalone === true;
+    // iOS: mostrar banner si no está instalada
     if (esIOS && !yaInstalada) {
-      const btn = document.getElementById('btn-instalar');
-      if (btn) {
-        btn.style.display = 'block';
-        btn.textContent = '📲 Cómo instalar en iPhone';
-      }
+      const b = document.getElementById('banner-ios');
+      if (b) b.classList.add('visible');
     }
   },
 
@@ -181,8 +188,8 @@ const InstallPWA = {
       this._prompt.prompt();
       this._prompt.userChoice.then((r) => {
         if (r.outcome === 'accepted') {
-          const btn = document.getElementById('btn-instalar');
-          if (btn) btn.style.display = 'none';
+          const b = document.getElementById('banner-android');
+          if (b) b.classList.remove('visible');
         }
         this._prompt = null;
       });
@@ -195,187 +202,124 @@ const InstallPWA = {
 };
 
 /* ════════════════════════════════════════════════════════
-   4. ONBOARDING — Configuración inicial de tasas
+   4. TEMA CLARO / OSCURO
    ════════════════════════════════════════════════════════ */
-
-const Onboarding = {
-
-  estaCompleto() {
-    try {
-      return localStorage.getItem(CONFIG.STORAGE.ONBOARDING) === 'done';
-    } catch (e) {
-      return false;
-    }
-  },
-
-  mostrar() {
-    const screen = document.getElementById('screen-onboarding');
-    if (!screen) return;
-
-    // Prefill con valores guardados o defaults
-    const bcv     = localStorage.getItem(CONFIG.STORAGE.BCV)     || CONFIG.DEFAULT_BCV;
-    const mercado = localStorage.getItem(CONFIG.STORAGE.MERCADO)  || CONFIG.DEFAULT_MERCADO;
-    const eur     = localStorage.getItem(CONFIG.STORAGE.EUR_BCV)  || CONFIG.DEFAULT_EUR_BCV;
-
-    document.getElementById('ob-bcv').value     = bcv;
-    document.getElementById('ob-mercado').value = mercado;
-    document.getElementById('ob-eur').value     = eur;
-
-    screen.classList.add('visible');
-  },
-
-  confirmar() {
-    const bcv     = parseFloat(document.getElementById('ob-bcv').value)     || CONFIG.DEFAULT_BCV;
-    const mercado = parseFloat(document.getElementById('ob-mercado').value)  || CONFIG.DEFAULT_MERCADO;
-    const eur     = parseFloat(document.getElementById('ob-eur').value)      || CONFIG.DEFAULT_EUR_BCV;
-
-    // Validación básica
-    if (bcv <= 0 || mercado <= 0) {
-      alert("Ingresa las tasas del día para continuar.");
-      return;
-    }
-
-    // Guardar en localStorage
-    try {
-      localStorage.setItem(CONFIG.STORAGE.BCV,      bcv.toString());
-      localStorage.setItem(CONFIG.STORAGE.MERCADO,   mercado.toString());
-      localStorage.setItem(CONFIG.STORAGE.EUR_BCV,   eur.toString());
-      localStorage.setItem(CONFIG.STORAGE.ONBOARDING, 'done');
-    } catch (e) { /* ignorar */ }
-
-    // Cerrar onboarding y cargar app
-    const screen = document.getElementById('screen-onboarding');
-    if (screen) screen.classList.remove('visible');
-
-    Calculadora.cargarTasas();
-    Calculadora.calc();
-    ModoSelector.actualizar();
-  },
-
-  /* Botón "Actualizar tasas" en la app principal */
-  editar() {
-    this.mostrar();
-  }
-};
-
-/* ════════════════════════════════════════════════════════
-   5. SELECTOR DE MODO DE COBRO
-   ════════════════════════════════════════════════════════ */
-
-const ModoSelector = {
-  modoActual: 'protected', // 'protected' | 'bcv'
+const Tema = {
+  actual: 'light',
 
   init() {
-    // Cargar modo guardado
-    try {
-      const saved = localStorage.getItem(CONFIG.STORAGE.MODO);
-      if (saved) this.modoActual = saved;
-    } catch (e) { /* usar default */ }
+    this.actual = localStorage.getItem(CONFIG.SK.TEMA) || 'light';
+    this.aplicar(this.actual, false);
 
-    this.actualizar();
+    // Sincronizar el toggle del drawer
+    const toggle = document.getElementById('toggle-dark');
+    if (toggle) toggle.checked = (this.actual === 'dark');
   },
 
-  setModo(modo) {
-    this.modoActual = modo;
-    try {
-      localStorage.setItem(CONFIG.STORAGE.MODO, modo);
-    } catch (e) { /* ignorar */ }
-    this.actualizar();
-    Calculadora.calc();
-  },
-
-  actualizar() {
-    const btnProtected = document.getElementById('btn-modo-protected');
-    const btnBCV       = document.getElementById('btn-modo-bcv');
-    const modePill     = document.getElementById('mode-pill');
-    const modeInfo     = document.getElementById('mode-info');
-
-    if (btnProtected && btnBCV) {
-      // Resetear
-      btnProtected.className = 'mode-btn';
-      btnBCV.className       = 'mode-btn';
-
-      if (this.modoActual === 'protected') {
-        btnProtected.classList.add('active-protected');
-        if (modePill) {
-          modePill.className = 'mode-pill protected';
-          modePill.innerHTML = '<span class="mode-pill-dot"></span>PROTEGIDO';
-        }
-        if (modeInfo) {
-          modeInfo.innerHTML = '<span>Cobro protegido:</span> usa USD Mercado para proteger tu margen contra la brecha cambiaria.';
-          modeInfo.classList.add('visible');
-        }
-      } else {
-        btnBCV.classList.add('active-bcv');
-        if (modePill) {
-          modePill.className = 'mode-pill bcv';
-          modePill.innerHTML = '<span class="mode-pill-dot"></span>TASA BCV';
-        }
-        if (modeInfo) {
-          modeInfo.innerHTML = '<span>Cobro BCV:</span> calcula usando únicamente la tasa oficial BCV.';
-          modeInfo.classList.add('visible');
-        }
-      }
+  aplicar(modo, guardar = true) {
+    this.actual = modo;
+    document.documentElement.setAttribute('data-theme', modo);
+    if (guardar) {
+      try { localStorage.setItem(CONFIG.SK.TEMA, modo); } catch(e) {}
     }
+    // Toggle en sync
+    const toggle = document.getElementById('toggle-dark');
+    if (toggle) toggle.checked = (modo === 'dark');
   },
 
-  /* Retorna la tasa efectiva según el modo */
-  getTasaEfectiva(bcv, mercado) {
-    if (this.modoActual === 'protected') {
-      return mercado; // Usa mercado/USDT para calcular
-    } else {
-      return bcv; // Usa solo BCV
-    }
+  toggle() {
+    this.aplicar(this.actual === 'dark' ? 'light' : 'dark');
   }
 };
 
 /* ════════════════════════════════════════════════════════
-   6. CALCULADORA BIMONEDA — Lógica financiera original
-   IMPORTANTE: No se modifican las fórmulas. Solo se
-   actualiza el nombre de variables de UI.
+   5. DRAWER (menú lateral)
    ════════════════════════════════════════════════════════ */
+const Drawer = {
+  open() {
+    document.getElementById('drawer').classList.add('open');
+    document.getElementById('drawer-overlay').classList.add('open');
+    document.body.style.overflow = 'hidden';
+    this.actualizarSubtitulos();
+  },
+  close() {
+    document.getElementById('drawer').classList.remove('open');
+    document.getElementById('drawer-overlay').classList.remove('open');
+    document.body.style.overflow = '';
+  },
+  actualizarSubtitulos() {
+    // Tasas sub
+    const bcv     = localStorage.getItem(CONFIG.SK.BCV)     || CONFIG.DEFAULT_BCV;
+    const mercado = localStorage.getItem(CONFIG.SK.MERCADO)  || CONFIG.DEFAULT_MERCADO;
+    const sub = document.getElementById('drawer-tasas-sub');
+    if (sub) sub.textContent = `BCV: Bs ${parseFloat(bcv).toFixed(2)} · Mdo: Bs ${parseFloat(mercado).toFixed(2)}`;
 
-const Calculadora = {
+    // Modo sub
+    const modoSub = document.getElementById('drawer-modo-sub');
+    if (modoSub) modoSub.textContent =
+      ModoSelector.modoActual === 'protected' ? 'Cobro protegido ✓' : 'Cobro BCV';
+  }
+};
 
-  /* Formateador de números al estilo venezolano */
-  fmt(n) {
-    return n.toLocaleString('es-VE', { minimumFractionDigits: 2 });
+/* ════════════════════════════════════════════════════════
+   6. MODAL DE CONFIGURACIÓN (tasas + modo)
+   ════════════════════════════════════════════════════════ */
+const ModalConfig = {
+  tipo: null,
+
+  abrirTasas() {
+    this.tipo = 'tasas';
+    const bcv     = localStorage.getItem(CONFIG.SK.BCV)     || CONFIG.DEFAULT_BCV;
+    const mercado = localStorage.getItem(CONFIG.SK.MERCADO)  || CONFIG.DEFAULT_MERCADO;
+    const factor  = bcv > 0 ? (parseFloat(mercado) / parseFloat(bcv)).toFixed(4) : '—';
+
+    document.getElementById('modal-config-title').textContent = '📊 Tasas del día';
+    document.getElementById('modal-config-body').innerHTML = `
+      <div class="config-row">
+        <div class="config-field">
+          <div class="config-label">USD BCV (Bs/$)</div>
+          <input class="field-input tasa" type="number" id="cfg-bcv"
+            value="${parseFloat(bcv).toFixed(2)}" step="0.01" inputmode="decimal"
+            oninput="ModalConfig.actualizarFactor()">
+        </div>
+        <div class="config-field">
+          <div class="config-label">USD Mercado (Bs/$)</div>
+          <input class="field-input tasa" type="number" id="cfg-mercado"
+            value="${parseFloat(mercado).toFixed(2)}" step="0.01" inputmode="decimal"
+            oninput="ModalConfig.actualizarFactor()">
+        </div>
+      </div>
+      <div class="factor-display">
+        <span class="factor-display-label">Protección de margen</span>
+        <span class="factor-display-val" id="cfg-factor">${factor}</span>
+      </div>
+      <button class="btn btn-primary" onclick="ModalConfig.guardarTasas()">✓ Guardar tasas</button>
+    `;
+    document.getElementById('modal-config').classList.add('open');
+    Drawer.close();
   },
 
-  /* Redondeo al medio dólar superior — lógica original intacta
-     Ejemplos: 2.00→2.00 | 2.01→2.50 | 2.51→3.00 | 3.99→4.00 */
-  redondearUSD(n) {
-    return Math.ceil(n * 2) / 2;
+  actualizarFactor() {
+    const bcv     = parseFloat(document.getElementById('cfg-bcv')?.value)     || 0;
+    const mercado = parseFloat(document.getElementById('cfg-mercado')?.value)  || 0;
+    const el = document.getElementById('cfg-factor');
+    if (el) el.textContent = bcv > 0 ? (mercado / bcv).toFixed(4) : '—';
   },
 
-  /* Flash animado al actualizar un valor */
-  flashEl(id) {
-    const el = document.getElementById(id);
-    if (!el) return;
-    el.classList.remove('value-updated');
-    // Force reflow
-    void el.offsetWidth;
-    el.classList.add('value-updated');
-  },
-
-  /* Cargar tasas desde localStorage */
-  cargarTasas() {
-    const bcv     = localStorage.getItem(CONFIG.STORAGE.BCV);
-    const mercado = localStorage.getItem(CONFIG.STORAGE.MERCADO);
-
-    document.getElementById('bcv').value     = bcv     ? bcv     : CONFIG.DEFAULT_BCV;
-    document.getElementById('mercado').value = mercado ? mercado : CONFIG.DEFAULT_MERCADO;
-  },
-
-  /* Actualiza al cambiar tasa manualmente */
-  onTasaChange() {
-    this.calc();
+  guardarTasas() {
+    const bcv     = parseFloat(document.getElementById('cfg-bcv').value)     || 0;
+    const mercado = parseFloat(document.getElementById('cfg-mercado').value)  || 0;
+    if (bcv <= 0 || mercado <= 0) { alert('Ingresa valores válidos.'); return; }
     try {
-      localStorage.setItem(CONFIG.STORAGE.BCV,    document.getElementById('bcv').value);
-      localStorage.setItem(CONFIG.STORAGE.MERCADO, document.getElementById('mercado').value);
-    } catch (e) { /* ignorar */ }
-
-    // Mostrar badge de tasas guardadas
+      localStorage.setItem(CONFIG.SK.BCV,     bcv.toString());
+      localStorage.setItem(CONFIG.SK.MERCADO,  mercado.toString());
+      localStorage.setItem(CONFIG.SK.ONBOARDING, 'done');
+      ResetDiario.marcarFecha();   // ← renueva la fecha del día
+    } catch(e) {}
+    Calculadora.cargarTasas();
+    Calculadora.calc();
+    this.cerrar();
+    // Badge guardado
     const badge = document.getElementById('savedBadge');
     if (badge) {
       badge.style.display = 'flex';
@@ -384,69 +328,187 @@ const Calculadora = {
     }
   },
 
-  /* ── CÁLCULO PRINCIPAL — fórmulas originales ─────────
-     La brecha cambiaria entre BCV y Mercado (USDT) es el
-     núcleo de la protección del margen comercial.
+  abrirModo() {
+    this.tipo = 'modo';
+    const actual = ModoSelector.modoActual;
+    document.getElementById('modal-config-title').textContent = '🛡️ Modo de cobro';
+    document.getElementById('modal-config-body').innerHTML = `
+      <div style="display:flex; flex-direction:column; gap:10px; margin-bottom:16px;">
+        <button class="drawer-item" style="border-radius:10px; border:1.5px solid ${actual==='protected'?'var(--orange)':'var(--border)'}; background:${actual==='protected'?'var(--orange-soft)':'var(--surface-2)'};"
+          onclick="ModoSelector.setModo('protected'); ModalConfig.cerrar();">
+          <div class="drawer-item-icon orange">🛡️</div>
+          <div class="drawer-item-text">
+            <div class="drawer-item-title">Cobro protegido</div>
+            <div class="drawer-item-sub">Usa USD Mercado. Protege tu margen contra la brecha cambiaria.</div>
+          </div>
+          ${actual==='protected' ? '<span style="color:var(--orange); font-size:16px;">✓</span>' : ''}
+        </button>
+        <button class="drawer-item" style="border-radius:10px; border:1.5px solid ${actual==='bcv'?'var(--blue)':'var(--border)'}; background:${actual==='bcv'?'var(--blue-soft)':'var(--surface-2)'};"
+          onclick="ModoSelector.setModo('bcv'); ModalConfig.cerrar();">
+          <div class="drawer-item-icon blue">🏛️</div>
+          <div class="drawer-item-text">
+            <div class="drawer-item-title">Cobro BCV</div>
+            <div class="drawer-item-sub">Usa solo la tasa oficial BCV. Sin ajuste de brecha.</div>
+          </div>
+          ${actual==='bcv' ? '<span style="color:var(--blue); font-size:16px;">✓</span>' : ''}
+        </button>
+      </div>
+    `;
+    document.getElementById('modal-config').classList.add('open');
+    Drawer.close();
+  },
 
-     factor = mercado / bcv
-     precioEspecial = montoUSD / factor   (precio protegido)
+  cerrar() {
+    document.getElementById('modal-config').classList.remove('open');
+  }
+};
 
-     El "factor de ajuste" / "Protección de margen" mide
-     cuánto más barato sale el dólar efectivo vs el oficial.
-  ───────────────────────────────────────────────────── */
+/* ════════════════════════════════════════════════════════
+   7. ONBOARDING
+   ════════════════════════════════════════════════════════ */
+const Onboarding = {
+  estaCompleto() {
+    try { return localStorage.getItem(CONFIG.SK.ONBOARDING) === 'done'; }
+    catch(e) { return false; }
+  },
+
+  mostrar() {
+    const bcv     = localStorage.getItem(CONFIG.SK.BCV)     || CONFIG.DEFAULT_BCV;
+    const mercado = localStorage.getItem(CONFIG.SK.MERCADO)  || CONFIG.DEFAULT_MERCADO;
+    document.getElementById('ob-bcv').value     = parseFloat(bcv).toFixed(2);
+    document.getElementById('ob-mercado').value = parseFloat(mercado).toFixed(2);
+    document.getElementById('screen-onboarding').classList.add('visible');
+  },
+
+  confirmar() {
+    const bcv     = parseFloat(document.getElementById('ob-bcv').value)     || 0;
+    const mercado = parseFloat(document.getElementById('ob-mercado').value)  || 0;
+    if (bcv <= 0 || mercado <= 0) { alert('Ingresa las tasas del día para continuar.'); return; }
+    try {
+      localStorage.setItem(CONFIG.SK.BCV,      bcv.toString());
+      localStorage.setItem(CONFIG.SK.MERCADO,   mercado.toString());
+      localStorage.setItem(CONFIG.SK.ONBOARDING,'done');
+      ResetDiario.marcarFecha();   // ← guarda la fecha de hoy con las tasas
+    } catch(e) {}
+    document.getElementById('screen-onboarding').classList.remove('visible');
+    Calculadora.cargarTasas();
+    Calculadora.calc();
+  }
+};
+
+/* ════════════════════════════════════════════════════════
+   8. SELECTOR DE MODO
+   ════════════════════════════════════════════════════════ */
+const ModoSelector = {
+  modoActual: 'protected',
+
+  init() {
+    try {
+      const saved = localStorage.getItem(CONFIG.SK.MODO);
+      if (saved) this.modoActual = saved;
+    } catch(e) {}
+    this.actualizarPill();
+  },
+
+  setModo(modo) {
+    this.modoActual = modo;
+    try { localStorage.setItem(CONFIG.SK.MODO, modo); } catch(e) {}
+    this.actualizarPill();
+    Calculadora.calc();
+  },
+
+  actualizarPill() {
+    const pill = document.getElementById('mode-pill');
+    const txt  = document.getElementById('mode-pill-txt');
+    if (!pill || !txt) return;
+    if (this.modoActual === 'protected') {
+      pill.className = 'mode-pill protected';
+      txt.textContent = 'PROTEGIDO';
+    } else {
+      pill.className = 'mode-pill bcv';
+      txt.textContent = 'TASA BCV';
+    }
+  }
+};
+
+/* ════════════════════════════════════════════════════════
+   9. CALCULADORA — Lógica financiera original intacta
+   ════════════════════════════════════════════════════════ */
+const Calculadora = {
+
+  fmt(n) {
+    return n.toLocaleString('es-VE', { minimumFractionDigits: 2 });
+  },
+
+  /* Redondeo al medio dólar superior — ORIGINAL
+     2.00→2.00 | 2.01→2.50 | 2.51→3.00 | 3.99→4.00 */
+  redondearUSD(n) {
+    return Math.ceil(n * 2) / 2;
+  },
+
+  cargarTasas() {
+    const bcv     = localStorage.getItem(CONFIG.SK.BCV)     || CONFIG.DEFAULT_BCV;
+    const mercado = localStorage.getItem(CONFIG.SK.MERCADO)  || CONFIG.DEFAULT_MERCADO;
+    // Estos campos ya NO están en pantalla principal, pero los mantenemos
+    // en memoria para el cálculo. Si existen en el DOM (modal) se actualizan.
+    this._bcv     = parseFloat(bcv);
+    this._mercado = parseFloat(mercado);
+  },
+
+  flashEl(id) {
+    const el = document.getElementById(id);
+    if (!el) return;
+    el.classList.remove('value-updated');
+    void el.offsetWidth;
+    el.classList.add('value-updated');
+  },
+
+  setVal(id, txt) {
+    const el = document.getElementById(id);
+    if (el) el.textContent = txt;
+  },
+
   calc() {
-    const bcv     = parseFloat(document.getElementById('bcv').value)     || 0;
-    const mercado = parseFloat(document.getElementById('mercado').value)  || 0;
-    const loy     = parseFloat(document.getElementById('loyverse').value) || 0;
-    const aBS     = parseFloat(document.getElementById('abonoBS').value)  || 0;
-    const aUSD    = parseFloat(document.getElementById('abonoUSD').value) || 0;
+    // Leer tasas desde localStorage (siempre actualizadas)
+    const bcv     = parseFloat(localStorage.getItem(CONFIG.SK.BCV))     || this._bcv     || CONFIG.DEFAULT_BCV;
+    const mercado = parseFloat(localStorage.getItem(CONFIG.SK.MERCADO))  || this._mercado || CONFIG.DEFAULT_MERCADO;
+
+    const loy  = parseFloat(document.getElementById('loyverse').value) || 0;
+    const aBS  = parseFloat(document.getElementById('abonoBS').value)  || 0;
+    const aUSD = parseFloat(document.getElementById('abonoUSD').value) || 0;
 
     // Factor de protección = mercado / BCV
-    const factor = (bcv > 0) ? mercado / bcv : 1;
+    const factor = bcv > 0 ? mercado / bcv : 1;
 
-    // Precio total en Bs según BCV
+    // Tasa efectiva según modo seleccionado
+    const tasaEfectiva = ModoSelector.modoActual === 'protected' ? factor : 1;
+
+    // Precio en Bs y precio en divisas
     const precioEnBs = loy * bcv;
+    const especial   = tasaEfectiva > 0 ? loy / tasaEfectiva : 0;
 
-    // Precio protegido en USD (usa el factor según modo)
-    let tasaEfectiva;
-    if (ModoSelector.modoActual === 'protected') {
-      tasaEfectiva = factor; // Divide por factor → precio USD más bajo/protegido
-    } else {
-      tasaEfectiva = 1;      // Modo BCV: el precio USD = monto directo
-    }
-
-    const especial = (tasaEfectiva > 0) ? loy / tasaEfectiva : 0;
-
-    // Actualizar UI — factor y precios base
-    this.setVal('factor',         factor.toFixed(4));
     this.setVal('precioBs',       'Bs ' + this.fmt(precioEnBs));
     this.setVal('precioEspecial', '$' + this.redondearUSD(especial).toFixed(2));
 
-    // Calcular cobros según abonos — lógica original
+    // Cálculo de cobros según abonos — LÓGICA ORIGINAL
     let cobrarUSD = 0;
     let cobrarBS  = 0;
 
     if (aBS > 0 && aUSD === 0) {
-      // Solo abono en Bs
       cobrarUSD = (loy - (aBS / bcv)) / tasaEfectiva;
     } else if (aUSD > 0 && aBS === 0) {
-      // Solo abono en USD
       cobrarBS = (loy - (aUSD * tasaEfectiva)) * bcv;
     } else if (aBS > 0 && aUSD > 0) {
-      // Pago mixto Bs + USD
       cobrarUSD = ((loy - (aBS / bcv)) / tasaEfectiva) - aUSD;
       if (cobrarUSD < 0) {
-        // Si sobra Bs por dar de cambio
         cobrarBS  = Math.abs(cobrarUSD) * bcv;
         cobrarUSD = 0;
       }
     } else {
-      // Sin abonos → mostrar precio especial y precio Bs
       cobrarUSD = especial;
       cobrarBS  = precioEnBs;
     }
 
-    // Actualizar resultados finales con animación flash
     this.setVal('cobrarBS',  'Bs ' + this.fmt(Math.max(0, cobrarBS)));
     this.setVal('cobrarUSD', '$'   + this.redondearUSD(Math.max(0, cobrarUSD)).toFixed(2));
 
@@ -455,50 +517,37 @@ const Calculadora = {
     this.flashEl('precioEspecial');
   },
 
-  /* Helper: actualiza texto de un elemento */
-  setVal(id, txt) {
-    const el = document.getElementById(id);
-    if (el) el.textContent = txt;
-  },
-
-  /* Limpia los campos de venta para una nueva transacción */
   nuevaVenta() {
     document.getElementById('loyverse').value = '';
     document.getElementById('abonoBS').value  = '';
     document.getElementById('abonoUSD').value = '';
-
-    // Pequeña animación al limpiar
     document.getElementById('loyverse').focus();
-
     this.calc();
   }
 };
 
 /* ════════════════════════════════════════════════════════
-   7. APP — Controlador principal
+   10. APP — Controlador principal
    ════════════════════════════════════════════════════════ */
-
 const App = {
-
-  /* Muestra la app y oculta el muro de licencia */
   mostrar() {
-    // 1. Elimina el estilo de bloqueo inyectado en <head>
-    const estiloEmergencia = document.getElementById('bloqueo-inicial');
-    if (estiloEmergencia) estiloEmergencia.parentNode.removeChild(estiloEmergencia);
+    // Elimina bloqueo inicial
+    const bloqueo = document.getElementById('bloqueo-inicial');
+    if (bloqueo) bloqueo.parentNode.removeChild(bloqueo);
 
-    // 2. Oculta el muro
-    const muro = document.getElementById('muro-bloqueo');
-    if (muro) muro.style.cssText = 'display:none !important';
+    document.getElementById('muro-bloqueo').style.cssText = 'display:none !important';
+    document.getElementById('app-content').style.cssText  = 'display:block !important';
 
-    // 3. Muestra la app
-    const app = document.getElementById('app-content');
-    if (app) app.style.cssText = 'display:block !important';
-
-    // 4. Inicializa módulos
-    Calculadora.cargarTasas();
+    // Inicializar módulos
+    Tema.init();
     ModoSelector.init();
 
-    // 5. Mostrar onboarding si nunca se configuró
+    // ← Verificar si las tasas son de hoy. Si no, las borra y pide de nuevo.
+    ResetDiario.verificar();
+
+    Calculadora.cargarTasas();
+
+    // Onboarding si es primera vez o si las tasas se resetearon
     if (!Onboarding.estaCompleto()) {
       Onboarding.mostrar();
     } else {
@@ -506,7 +555,6 @@ const App = {
     }
   },
 
-  /* Verificación de licencia al arrancar */
   verificar() {
     if (Licencia.estaActiva()) {
       this.mostrar();
@@ -517,48 +565,58 @@ const App = {
 };
 
 /* ════════════════════════════════════════════════════════
-   FUNCIONES GLOBALES — Puentes para eventos HTML inline
-   Necesarios para onclick="" en el HTML
+   FUNCIONES GLOBALES (puentes para onclick="" en HTML)
    ════════════════════════════════════════════════════════ */
 
 // Licencia
-function pedirAcceso()     { Licencia.pedirAcceso(); }
-function activar()         { Licencia.activar(); }
-function accionInstalar()  { InstallPWA.accion(); }
-function cerrarModalIos()  { InstallPWA.cerrarModalIos(); }
+function pedirAcceso()    { Licencia.pedirAcceso(); }
+function activar()        { Licencia.activar(); }
+function accionInstalar() { InstallPWA.accion(); }
+function cerrarModalIos() { InstallPWA.cerrarModalIos(); }
 
 // Onboarding
 function confirmarOnboarding() { Onboarding.confirmar(); }
-function editarTasas()         { Onboarding.editar(); }
+
+// Drawer
+function abrirDrawer()   { Drawer.open(); }
+function cerrarDrawer()  { Drawer.close(); }
+
+// Config modal
+function abrirConfigTasas() { ModalConfig.abrirTasas(); }
+function abrirSelectorModo(){ ModalConfig.abrirModo();  }
+function cerrarModalConfig() { ModalConfig.cerrar(); }
+
+// Tema
+function toggleTema() { Tema.toggle(); }
 
 // Calculadora
-function onTasaChange()  { Calculadora.onTasaChange(); }
-function calc()          { Calculadora.calc(); }
-function nuevaVenta()    { Calculadora.nuevaVenta(); }
+function calc()       { Calculadora.calc(); }
+function nuevaVenta() { Calculadora.nuevaVenta(); }
 
-// Selector de modo
-function setModo(modo) { ModoSelector.setModo(modo); }
+// Drawer items
+function irSoporte() {
+  Drawer.close();
+  window.open(`https://wa.me/${CONFIG.WS_NUMBER}?text=${encodeURIComponent('Hola, necesito soporte con Calcu Bimoneda')}`, '_blank');
+}
+function mostrarAcercaDe() {
+  Drawer.close();
+  alert(`Calcu Bimoneda v${CONFIG.VERSION}\nProyecto Cristal\n\nCalculadora de cobros bimoneda Bs/USD para comerciantes venezolanos.\n\nID: ${Licencia.getID()}`);
+}
 
 /* ════════════════════════════════════════════════════════
-   ARRANQUE — Doble red de seguridad para Safari iOS
+   ARRANQUE — doble red para Safari iOS + PWA
    ════════════════════════════════════════════════════════ */
-
 let _verificado = false;
-
 function _arrancar() {
   if (_verificado) return;
   _verificado = true;
-
   InstallPWA.init();
   App.verificar();
 }
 
-// Dispara en cuanto el DOM está listo
 if (document.readyState === 'loading') {
   document.addEventListener('DOMContentLoaded', _arrancar);
 } else {
   _arrancar();
 }
-
-// Segunda red: cubre casos donde el SW retrasa DOMContentLoaded
 window.addEventListener('load', _arrancar);
